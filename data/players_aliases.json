@@ -1,0 +1,4 @@
+{
+  "_comment": "Mapping van naam-varianten naar de canonieke spelernaam. Sleutel = variant, waarde = canonical naam.",
+  "aliases": {}
+}
