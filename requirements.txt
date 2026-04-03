@@ -5,3 +5,4 @@ pdfplumber>=0.10.0
 rapidfuzz>=3.0.0
 streamlit>=1.32.0
 plotly>=5.20.0
+requests>=2.31.0
