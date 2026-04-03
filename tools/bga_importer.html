@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<title>BGA Carcassonne Importer</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, sans-serif; background: #1a1a2e; color: #eee; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 2rem; }
+  .card { background: #16213e; border-radius: 12px; padding: 2rem; width: 100%; max-width: 540px; box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
+  h1 { font-size: 1.4rem; color: #e94560; margin-bottom: 0.25rem; }
+  .subtitle { color: #888; font-size: 0.85rem; margin-bottom: 1.5rem; }
+  label { display: block; font-size: 0.8rem; color: #aaa; margin-bottom: 0.3rem; margin-top: 1rem; }
+  input, textarea { width: 100%; background: #0f3460; border: 1px solid #e9456030; border-radius: 6px; color: #eee; padding: 0.6rem 0.8rem; font-size: 0.9rem; outline: none; }
+  input:focus, textarea:focus { border-color: #e94560; }
+  textarea { resize: vertical; min-height: 80px; font-family: monospace; }
+  .row { display: flex; gap: 0.5rem; margin-top: 1rem; }
+  button { flex: 1; padding: 0.7rem; border: none; border-radius: 6px; font-size: 0.9rem; cursor: pointer; font-weight: 600; transition: opacity 0.15s; }
+  button:hover { opacity: 0.85; }
+  .btn-primary { background: #e94560; color: #fff; }
+  .btn-secondary { background: #0f3460; color: #aaa; border: 1px solid #e9456030; }
+  .log { margin-top: 1.2rem; background: #0a0a1a; border-radius: 6px; padding: 0.8rem; font-family: monospace; font-size: 0.78rem; max-height: 200px; overflow-y: auto; display: none; }
+  .log.visible { display: block; }
+  .log-line { padding: 0.1rem 0; }
+  .log-line.ok { color: #4ade80; }
+  .log-line.err { color: #f87171; }
+  .log-line.info { color: #60a5fa; }
+  .log-line.warn { color: #fbbf24; }
+  .progress { margin-top: 0.8rem; background: #0f3460; border-radius: 4px; height: 6px; display: none; }
+  .progress.visible { display: block; }
+  .progress-bar { height: 100%; background: #e94560; border-radius: 4px; transition: width 0.3s; }
+  .bookmarklet-section { margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid #e9456015; }
+  .bookmarklet-title { font-size: 0.8rem; color: #888; margin-bottom: 0.6rem; }
+  .bookmarklet-link { display: inline-block; background: #e94560; color: white; padding: 0.5rem 1rem; border-radius: 6px; text-decoration: none; font-size: 0.85rem; font-weight: 600; cursor: grab; }
+  .bookmarklet-instructions { font-size: 0.75rem; color: #666; margin-top: 0.5rem; line-height: 1.5; }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <h1>BGA Carcassonne Importer</h1>
+  <p class="subtitle">Haal speldata op voor Belgische spelers via BoardGameArena</p>
+
+  <label>BGA Player IDs (één per lijn of komma-gescheiden)</label>
+  <textarea id="playerIds" placeholder="93464744&#10;84635111&#10;65246746"></textarea>
+
+  <label>Startdatum</label>
+  <input type="date" id="since" value="2020-01-01">
+
+  <div class="row">
+    <button class="btn-primary" onclick="startFetch()">▶ Start import</button>
+    <button class="btn-secondary" onclick="clearLog()">✕ Wis log</button>
+  </div>
+
+  <div class="progress" id="progress"><div class="progress-bar" id="progressBar" style="width:0%"></div></div>
+  <div class="log" id="log"></div>
+
+  <div class="bookmarklet-section">
+    <div class="bookmarklet-title">OF: gebruik als bookmarklet op BGA (aanbevolen)</div>
+    <a class="bookmarklet-link" id="bookmarkletLink" title="Sleep naar bladwijzerbalk">⭐ BGA Importer</a>
+    <p class="bookmarklet-instructions">
+      Sleep de knop hierboven naar je bladwijzerbalk.<br>
+      Klik erop terwijl je op <strong>boardgamearena.com</strong> bent (al ingelogd) → panel verschijnt automatisch.
+    </p>
+  </div>
+</div>
+
+<script>
+// ─── Bookmarklet code (compact, wordt ingebouwd als bladwijzer) ─────────────
+const BOOKMARKLET_CODE = `(function(){
+if(document.getElementById('bga-importer-panel')){document.getElementById('bga-importer-panel').remove();return;}
+var s=document.createElement('style');
+s.textContent='#bga-importer-panel{position:fixed;top:20px;right:20px;z-index:999999;background:#16213e;color:#eee;border-radius:10px;padding:16px;width:320px;box-shadow:0 4px 24px rgba(0,0,0,0.6);font-family:system-ui,sans-serif;font-size:13px;}#bga-importer-panel h3{color:#e94560;margin:0 0 10px;font-size:14px;}#bga-importer-panel textarea,#bga-importer-panel input{width:100%;background:#0f3460;border:1px solid #e9456040;border-radius:4px;color:#eee;padding:6px;margin:4px 0 8px;font-size:12px;box-sizing:border-box;font-family:monospace;}#bga-importer-panel button{width:100%;padding:7px;border:none;border-radius:4px;cursor:pointer;font-weight:600;font-size:12px;margin-top:4px;}#bga-btn-start{background:#e94560;color:#fff;}#bga-btn-close{background:#0f3460;color:#aaa;border:1px solid #e9456020;margin-top:6px;}#bga-log{background:#0a0a1a;border-radius:4px;padding:6px;font-family:monospace;font-size:11px;max-height:150px;overflow-y:auto;margin-top:8px;display:none;}';
+document.head.appendChild(s);
+var p=document.createElement('div');p.id='bga-importer-panel';
+p.innerHTML='<h3>&#9889; BGA Carcassonne Importer</h3><label>Player IDs (1 per lijn)</label><textarea id="bga-ids" rows="3" placeholder="93464744&#10;84635111&#10;65246746">93464744\n84635111\n65246746</textarea><label>Startdatum</label><input id="bga-since" type="date" value="2020-01-01"><button id="bga-btn-start">&#9654; Start import</button><button id="bga-btn-close">&#10005; Sluiten</button><div id="bga-log"></div>';
+document.body.appendChild(p);
+document.getElementById('bga-btn-close').onclick=function(){p.remove();};
+document.getElementById('bga-btn-start').onclick=async function(){
+  var ids=document.getElementById('bga-ids').value.split(/[\\n,]+/).map(s=>s.trim()).filter(Boolean);
+  var since=new Date(document.getElementById('bga-since').value);
+  var log=document.getElementById('bga-log');log.style.display='block';log.innerHTML='';
+  function lg(msg,c){var d=document.createElement('div');d.style.color=c||'#eee';d.textContent=msg;log.appendChild(d);log.scrollTop=log.scrollHeight;}
+  async function chunk(pid,s,e){
+    var p=new URLSearchParams({player:pid,opponent_id:0,game_id:1,finished:1,updateStats:0,start_date:Math.floor(s/1000),end_date:Math.floor(e/1000),'dojo.preventCache':Date.now()});
+    var r=await fetch('/gamestats/gamestats/getGames.html?'+p);
+    var d=await r.json();
+    if(d.status==='0')throw new Error(d.error);
+    return Array.isArray(d)?d:(d.data||d.games||[]);
+  }
+  var all={};
+  for(var pid of ids){
+    lg('Speler '+pid+' ophalen...','#60a5fa');all[pid]=[];var seen=new Set();
+    var cur=new Date(since);var now=new Date();
+    while(cur<now){
+      var end=new Date(Math.min(cur.getTime()+90*864e5,now));
+      lg('  '+cur.toISOString().slice(0,10)+' \u2192 '+end.toISOString().slice(0,10),'#888');
+      try{var c=await chunk(pid,cur,end);for(var g of c){if(!seen.has(g.table_id)){seen.add(g.table_id);all[pid].push(g);}}}catch(e){lg('  FOUT: '+e.message,'#f87171');}
+      cur=end;await new Promise(r=>setTimeout(r,1200));
+    }
+    lg('\u2713 '+all[pid].length+' spellen voor '+pid,'#4ade80');
+  }
+  var total=Object.values(all).reduce((s,a)=>s+a.length,0);
+  lg('\\nKlaar: '+total+' spellen totaal. Bestand downloaden...','#fbbf24');
+  var blob=new Blob([JSON.stringify(all,null,2)],{type:'application/json'});
+  var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='bga_games_'+new Date().toISOString().slice(0,10)+'.json';a.click();
+  lg('bga_games_*.json gedownload!','#4ade80');
+};
+})();`;
+
+// Zet bookmarklet link
+document.getElementById('bookmarkletLink').href = 'javascript:' + encodeURIComponent(BOOKMARKLET_CODE);
+
+// ─── Lokale fetch (werkt enkel als je de HTML vanop BGA opent) ─────────────
+function log(msg, type='info') {
+  const el = document.getElementById('log');
+  el.classList.add('visible');
+  const line = document.createElement('div');
+  line.className = 'log-line ' + type;
+  line.textContent = msg;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+}
+
+function clearLog() {
+  const el = document.getElementById('log');
+  el.innerHTML = '';
+  el.classList.remove('visible');
+  document.getElementById('progress').classList.remove('visible');
+}
+
+async function fetchChunk(playerId, startTs, endTs) {
+  const params = new URLSearchParams({
+    player: playerId, opponent_id: 0, game_id: 1,
+    finished: 1, updateStats: 0,
+    start_date: startTs, end_date: endTs,
+    'dojo.preventCache': Date.now()
+  });
+  const r = await fetch(`/gamestats/gamestats/getGames.html?${params}`);
+  const data = await r.json();
+  if (data.status === '0') throw new Error(data.error);
+  return Array.isArray(data) ? data : (data.data || data.games || []);
+}
+
+async function startFetch() {
+  clearLog();
+  const ids = document.getElementById('playerIds').value
+    .split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
+  const since = new Date(document.getElementById('since').value);
+
+  if (!ids.length) { log('Geen player IDs ingevuld.', 'err'); return; }
+
+  // Check of we op BGA zijn
+  if (!location.hostname.includes('boardgamearena')) {
+    log('⚠ Je bent niet op boardgamearena.com!', 'warn');
+    log('Gebruik de bookmarklet hieronder wanneer je op BGA bent.', 'warn');
+    log('Of open dit bestand vanuit je BGA browser-tab (niet mogelijk vanuit lokaal bestand).', 'info');
+    return;
+  }
+
+  const progress = document.getElementById('progress');
+  const progressBar = document.getElementById('progressBar');
+  progress.classList.add('visible');
+
+  const all = {};
+  const chunkDays = 90;
+  const now = new Date();
+
+  for (let i = 0; i < ids.length; i++) {
+    const pid = ids[i];
+    log(`Speler ${pid} ophalen ...`, 'info');
+    all[pid] = [];
+    const seen = new Set();
+    let cursor = new Date(since);
+
+    while (cursor < now) {
+      const end = new Date(Math.min(cursor.getTime() + chunkDays * 86400000, now));
+      log(`  ${cursor.toISOString().slice(0,10)} → ${end.toISOString().slice(0,10)}`, 'info');
+      try {
+        const chunk = await fetchChunk(pid, Math.floor(cursor/1000), Math.floor(end/1000));
+        for (const g of chunk) {
+          if (!seen.has(g.table_id)) { seen.add(g.table_id); all[pid].push(g); }
+        }
+        log(`    ${all[pid].length} spellen totaal`, 'ok');
+      } catch(e) {
+        log(`    FOUT: ${e.message}`, 'err');
+      }
+      cursor = end;
+      progressBar.style.width = `${Math.round(((i + (cursor-since)/(now-since)) / ids.length) * 100)}%`;
+      await new Promise(r => setTimeout(r, 1200));
+    }
+    log(`✓ ${all[pid].length} spellen voor speler ${pid}`, 'ok');
+  }
+
+  const total = Object.values(all).reduce((s, a) => s + a.length, 0);
+  log(`\nKlaar! ${total} spellen totaal. Bestand downloaden ...`, 'ok');
+  progressBar.style.width = '100%';
+
+  const blob = new Blob([JSON.stringify(all, null, 2)], {type: 'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `bga_games_${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+  log('bga_games_*.json gedownload! Zet het in data/raw/ en voer de import uit.', 'ok');
+}
+</script>
+</body>
+</html>

@@ -260,8 +260,9 @@ if __name__ == "__main__":
     parser.add_argument("--visible",  action="store_true", help="Browser zichtbaar tonen (voor debuggen)")
     args = parser.parse_args()
 
-    if not args.email or not args.password:
-        print("Gebruik: --email en --password, of stel BGA_EMAIL / BGA_PASSWORD in.")
+    if not SESSION_PATH.exists() and (not args.email or not args.password):
+        print("Geen opgeslagen sessie gevonden. Voer eerst uit: python scripts/bga_save_session.py")
+        print("Of geef --email en --password mee.")
         exit(1)
 
     asyncio.run(fetch_and_save(
