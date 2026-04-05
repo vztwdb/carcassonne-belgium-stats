@@ -27,7 +27,6 @@ from src.importers.bga_importer import import_game, DB_PATH
 ROOT    = Path(__file__).parents[2]
 DB_FILE = str(ROOT / DB_PATH)
 
-st.set_page_config(page_title="BGA Import", page_icon="📥", layout="centered")
 st.title("📥 BGA Data Importeren")
 st.caption("Haal speldata op van BoardGameArena en importeer in de database")
 

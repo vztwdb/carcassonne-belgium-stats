@@ -11,7 +11,6 @@ DB_PATH = Path(__file__).parents[2] / "data" / "carcassonne.duckdb"
 
 ELO_BASE = 1300
 
-st.set_page_config(page_title="Spelers", page_icon="👤", layout="wide")
 st.title("👤 Spelers")
 
 if not DB_PATH.exists():

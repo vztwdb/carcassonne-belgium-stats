@@ -16,7 +16,6 @@ sys.path.insert(0, str(Path(__file__).parents[2]))
 
 DB_PATH = Path(__file__).parents[2] / "data" / "carcassonne.duckdb"
 
-st.set_page_config(page_title="Database", page_icon="🗄️", layout="wide")
 st.title("🗄️ Database Viewer")
 
 if not DB_PATH.exists():

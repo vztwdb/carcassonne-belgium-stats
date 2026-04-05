@@ -10,7 +10,6 @@ sys.path.insert(0, str(Path(__file__).parents[2]))
 DB_PATH = Path(__file__).parents[2] / "data" / "carcassonne.duckdb"
 ELO_BASE = 1300
 
-st.set_page_config(page_title="Speler detail", page_icon="👤", layout="wide")
 
 # ── Read player from session state ───────────────────────────────────────────
 
