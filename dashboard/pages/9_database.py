@@ -1,10 +1,16 @@
 """Database viewer pagina."""
 
+import os
 import sys
 from pathlib import Path
 
-import duckdb
 import streamlit as st
+
+if not os.environ.get("CARCASSONNE_ADMIN"):
+    st.error("Deze pagina is niet beschikbaar.")
+    st.stop()
+
+import duckdb
 
 sys.path.insert(0, str(Path(__file__).parents[2]))
 
