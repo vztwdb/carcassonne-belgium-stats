@@ -1,7 +1,16 @@
 {
   "permissions": {
     "allow": [
-      "WebFetch(domain:forum.boardgamearena.com)"
+      "WebFetch(domain:forum.boardgamearena.com)",
+      "Bash(git push:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m ':*)",
+      "Bash(CARCASSONNE_ADMIN=1 streamlit run dashboard/app.py --server.port 8501)",
+      "Bash(git rm:*)",
+      "Bash(python -c ':*)"
+    ],
+    "additionalDirectories": [
+      "\\tmp"
     ]
   }
 }

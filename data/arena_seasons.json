@@ -1,0 +1,35 @@
+{
+  "metadata": {
+    "source": "Calculated based on anchor: Season 24 starts 2026-01-13, ends 2026-04-14. Each season ~90 days, counted backwards.",
+    "note": "Early seasons (especially Season 0/Beta, which launched ~Aug 2019) may have had non-standard durations. Dates from ~Season 18 onward should be most accurate.",
+    "current_season": 24,
+    "generated": "2026-04-06"
+  },
+  "seasons": [
+    { "season": 0, "label": "Beta", "start_date": "2020-02-14", "end_date": "2020-05-14", "duration_days": 90 },
+    { "season": 1, "start_date": "2020-05-14", "end_date": "2020-08-12", "duration_days": 90 },
+    { "season": 2, "start_date": "2020-08-12", "end_date": "2020-11-10", "duration_days": 90 },
+    { "season": 3, "start_date": "2020-11-10", "end_date": "2021-02-08", "duration_days": 90 },
+    { "season": 4, "start_date": "2021-02-08", "end_date": "2021-05-09", "duration_days": 90 },
+    { "season": 5, "start_date": "2021-05-09", "end_date": "2021-08-07", "duration_days": 90 },
+    { "season": 6, "start_date": "2021-08-07", "end_date": "2021-11-05", "duration_days": 90 },
+    { "season": 7, "start_date": "2021-11-05", "end_date": "2022-02-03", "duration_days": 90 },
+    { "season": 8, "start_date": "2022-02-03", "end_date": "2022-05-04", "duration_days": 90 },
+    { "season": 9, "start_date": "2022-05-04", "end_date": "2022-08-02", "duration_days": 90 },
+    { "season": 10, "start_date": "2022-08-02", "end_date": "2022-10-31", "duration_days": 90 },
+    { "season": 11, "start_date": "2022-10-31", "end_date": "2023-01-29", "duration_days": 90 },
+    { "season": 12, "start_date": "2023-01-29", "end_date": "2023-04-29", "duration_days": 90 },
+    { "season": 13, "start_date": "2023-04-29", "end_date": "2023-07-28", "duration_days": 90 },
+    { "season": 14, "start_date": "2023-07-28", "end_date": "2023-10-26", "duration_days": 90 },
+    { "season": 15, "start_date": "2023-10-26", "end_date": "2024-01-24", "duration_days": 90 },
+    { "season": 16, "start_date": "2024-01-24", "end_date": "2024-04-23", "duration_days": 90 },
+    { "season": 17, "start_date": "2024-04-23", "end_date": "2024-07-22", "duration_days": 90 },
+    { "season": 18, "start_date": "2024-07-22", "end_date": "2024-10-20", "duration_days": 90 },
+    { "season": 19, "label": "Harvest of Champions", "start_date": "2024-10-20", "end_date": "2025-01-18", "duration_days": 90 },
+    { "season": 20, "label": "A Blizzard of Games", "start_date": "2025-01-18", "end_date": "2025-04-18", "duration_days": 90 },
+    { "season": 21, "start_date": "2025-04-18", "end_date": "2025-07-17", "duration_days": 90 },
+    { "season": 22, "label": "Champions Rise", "start_date": "2025-07-17", "end_date": "2025-10-15", "duration_days": 90 },
+    { "season": 23, "label": "Leaves Fall, Champions Rise", "start_date": "2025-10-15", "end_date": "2026-01-13", "duration_days": 90 },
+    { "season": 24, "label": "New Year, New Horizons", "start_date": "2026-01-13", "end_date": "2026-04-14", "duration_days": 91 }
+  ]
+}

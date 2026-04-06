@@ -139,19 +139,54 @@ def import_game(conn: duckdb.DuckDBPyConnection, game: dict) -> bool:
             if elo_win_str.lstrip("-").isdigit():
                 elo_delta = int(elo_win_str)
 
-            for raw, target in [(elo_after_raw, "elo_after"), (elo_penalty_raw, "elo_penalty"), (arena_after_raw, "arena_after")]:
-                if raw is not None:
+            # elo_after kan HTML bevatten: <span class="gamerank_value">558</span>
+            if elo_after_raw is not None:
+                raw_str = str(elo_after_raw)
+                m = re.search(r'gamerank_value[^>]*>(\d+)', raw_str)
+                if m:
+                    elo_after_val = int(m.group(1))
+                else:
                     try:
-                        val = int(raw)
+                        elo_after_val = int(raw_str)
                     except (ValueError, TypeError):
-                        m = re.search(r"(-?\d{1,5})", str(raw))
-                        val = int(m.group(1)) if m else None
-                    if target == "elo_after":    elo_after_val    = val
-                    if target == "elo_penalty":  elo_penalty_val  = val
-                    if target == "arena_after":  arena_after_val  = val
+                        m2 = re.search(r"(-?\d{1,5})", raw_str)
+                        elo_after_val = int(m2.group(1)) if m2 else None
 
+            # elo_penalty: gewoon integer
+            if elo_penalty_raw is not None:
+                try:
+                    elo_penalty_val = int(elo_penalty_raw)
+                except (ValueError, TypeError):
+                    m = re.search(r"(-?\d{1,5})", str(elo_penalty_raw))
+                    elo_penalty_val = int(m.group(1)) if m else None
+
+            # arena_after formaat: "201.1528" → geheel=progressie, decimaal=arena ELO
+            if arena_after_raw is not None:
+                raw_str = str(arena_after_raw)
+                if "." in raw_str:
+                    parts = raw_str.split(".")
+                    try:
+                        arena_after_val = int(parts[1])  # arena ELO (bv. 1528)
+                    except (ValueError, IndexError):
+                        arena_after_val = None
+                else:
+                    try:
+                        arena_after_val = int(raw_str)
+                    except (ValueError, TypeError):
+                        arena_after_val = None
+
+            # arena_win formaat: "92.0014" → geheel=arena punten gewonnen
             if arena_win_raw is not None:
-                arena_win_val = bool(int(arena_win_raw)) if str(arena_win_raw).isdigit() else None
+                raw_str = str(arena_win_raw)
+                if "." in raw_str:
+                    try:
+                        arena_win_val = int(raw_str.split(".")[0]) > 0
+                    except (ValueError, IndexError):
+                        arena_win_val = None
+                elif raw_str.isdigit():
+                    arena_win_val = bool(int(raw_str))
+                else:
+                    arena_win_val = None
 
         player_id = get_or_create_player(conn, bga_pid, name)
         conn.execute(

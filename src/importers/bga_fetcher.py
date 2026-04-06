@@ -136,10 +136,12 @@ def fetch_player_games(
     token: str,
     cookies: dict,
     delay: float = REQUEST_DELAY,
+    since: Optional[datetime] = None,
 ) -> list[dict]:
     """
-    Haal alle Carcassonne spellen op voor een speler via paginering.
+    Haal Carcassonne spellen op voor een speler via paginering.
     Gebruikt x-request-token header + sessiecookies.
+    Als since is opgegeven, stopt zodra alle spellen op een pagina ouder zijn.
     """
     session = requests.Session()
     session.headers.update({
@@ -183,15 +185,41 @@ def fetch_player_games(
             logger.info(f"  Geen spellen meer op pagina {page_num}, klaar.")
             break
 
+        # Log alle velden van het eerste spel (eenmalig)
+        if page_num == 1 and games:
+            logger.info(f"  === RAW API FIELDS (eerste spel) ===")
+            for k, v in sorted(games[0].items()):
+                logger.info(f"    {k}: {v!r}")
+            logger.info(f"  === END RAW API FIELDS ===")
+
         new = 0
+        stop_early = False
         for g in games:
             tid = str(g.get("table_id", ""))
             if tid and tid not in seen:
+                # Check if game is older than since cutoff
+                if since:
+                    end_raw = str(g.get("end", "") or "")
+                    start_raw = str(g.get("start", "") or "")
+                    game_ts = None
+                    for raw in (end_raw, start_raw):
+                        if raw and raw.isdigit():
+                            game_ts = datetime.utcfromtimestamp(int(raw))
+                            break
+                    if game_ts and game_ts < since:
+                        stop_early = True
+                        break
+
                 seen.add(tid)
                 all_games.append(g)
                 new += 1
 
         logger.info(f"    {new} nieuw | totaal: {len(all_games)}")
+
+        if stop_early:
+            logger.info(f"  Spellen ouder dan {since.date()} bereikt, stoppen.")
+            break
+
         page_num += 1
 
     return all_games

@@ -54,27 +54,48 @@ with col_bga:
 # ── Summary stats ────────────────────────────────────────────────────────────
 
 stats = conn.execute("""
+    WITH game_info AS (
+        SELECT
+            g.id AS game_id,
+            (SELECT COUNT(*) FROM game_players gp2 WHERE gp2.game_id = g.id) AS num_players,
+            g.duration_min,
+            (SELECT MAX(gp2.score) FROM game_players gp2 WHERE gp2.game_id = g.id) AS max_score
+        FROM games g
+        WHERE g.boardgame_id = ? AND g.unranked = false
+    )
     SELECT
         COUNT(*)                                                           AS total_games,
         ROUND(100.0 * SUM(CASE WHEN gp.elo_delta > 0 THEN 1 ELSE 0 END)
               / NULLIF(SUM(CASE WHEN gp.elo_delta IS NOT NULL THEN 1 ELSE 0 END), 0), 1) AS win_pct,
-        ROUND(AVG(gp.score), 1)                                           AS avg_score,
         MAX(gp.elo_after)                                                  AS max_elo,
+        MAX(gp.arena_after)                                                AS max_arena,
+        ROUND(100.0 * SUM(CASE WHEN gi.num_players = 2 THEN 1 ELSE 0 END)
+              / COUNT(*), 1)                                               AS pct_2p,
+        ROUND(100.0 * SUM(CASE WHEN gi.duration_min IS NOT NULL AND gi.duration_min <= 60 THEN 1 ELSE 0 END)
+              / NULLIF(SUM(CASE WHEN gi.duration_min IS NOT NULL THEN 1 ELSE 0 END), 0), 1) AS pct_rt,
+        ROUND(100.0 * SUM(CASE WHEN gi.max_score < 160 THEN 1 ELSE 0 END)
+              / NULLIF(SUM(CASE WHEN gi.max_score IS NOT NULL THEN 1 ELSE 0 END), 0), 1) AS pct_basis,
         MIN(COALESCE(g.ended_at, g.played_at))                            AS first_game,
         MAX(COALESCE(g.ended_at, g.played_at))                            AS last_game
     FROM game_players gp
     JOIN games g ON g.id = gp.game_id
+    JOIN game_info gi ON gi.game_id = g.id
     WHERE gp.player_id = ? AND g.boardgame_id = ? AND g.unranked = false
-""", [player_id, boardgame_id]).fetchone()
+""", [boardgame_id, player_id, boardgame_id]).fetchone()
 
-total_games, win_pct, avg_score, max_elo, first_game, last_game = stats
+total_games, win_pct, max_elo, max_arena, pct_2p, pct_rt, pct_basis, first_game, last_game = stats
 
-col1, col2, col3, col4, col5 = st.columns(5)
+col1, col2, col3, col4 = st.columns(4)
 col1.metric("Land", p_country or "?")
 col2.metric("Spellen", total_games)
 col3.metric("Win%", f"{win_pct}%" if win_pct is not None else "–")
-col4.metric("Gem. score", avg_score if avg_score is not None else "–")
-col5.metric("Max ELO", int(max_elo - ELO_BASE) if max_elo is not None else "–")
+col4.metric("Max ELO", int(max_elo - ELO_BASE) if max_elo is not None else "–")
+
+col5, col6, col7, col8 = st.columns(4)
+col5.metric("Max Arena", int(max_arena) if max_arena is not None else "–")
+col6.metric("% 2 spelers", f"{pct_2p}%" if pct_2p is not None else "–")
+col7.metric("% Realtime", f"{pct_rt}%" if pct_rt is not None else "–")
+col8.metric("% Basisspel", f"{pct_basis}%" if pct_basis is not None else "–")
 
 if first_game and last_game:
     st.caption(f"{bg_name} — van {first_game:%Y-%m-%d} tot {last_game:%Y-%m-%d}")
