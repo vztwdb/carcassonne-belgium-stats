@@ -119,7 +119,11 @@ def import_game(conn: duckdb.DuckDBPyConnection, game: dict) -> bool:
 
     for i, bga_pid in enumerate(player_ids_raw):
         name = player_names_raw[i] if i < len(player_names_raw) else f"player_{bga_pid}"
-        score = float(scores_raw[i]) if i < len(scores_raw) and scores_raw[i] else None
+        score_str = scores_raw[i] if i < len(scores_raw) else ""
+        try:
+            score = float(score_str) if score_str else None
+        except (ValueError, TypeError):
+            score = None
         rank = int(ranks_raw[i]) if i < len(ranks_raw) and ranks_raw[i].isdigit() else None
 
         # ELO en arena info (enkel voor speler i==0 beschikbaar in de API)

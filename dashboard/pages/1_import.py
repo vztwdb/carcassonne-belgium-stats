@@ -3,12 +3,17 @@ BGA Data Import pagina.
 Haalt Carcassonne speldata op van BoardGameArena en importeert in DuckDB.
 De volledige import draait in een achtergrondthread zodat Streamlit reruns
 de import niet onderbreken.
+
+Threading-aanpak: st.session_state is niet thread-safe in nieuwere Streamlit.
+We slaan een gewone dict op in session_state en geven die mee als referentie
+aan de thread. De thread schrijft naar die dict, de UI leest hem bij elke rerun.
 """
 
 import asyncio
 import os
 import sys
 import threading
+import traceback
 from pathlib import Path
 
 import streamlit as st
@@ -31,49 +36,52 @@ st.title("📥 BGA Data Importeren")
 st.caption("Haal speldata op van BoardGameArena en importeer in de database")
 
 
-# ── Initialiseer session state ────────────────────────────────────────────────
+# ── Thread-safe shared state ─────────────────────────────────────────────────
+# Gewone Python dicts/lists, opgeslagen in session_state maar alleen via
+# referentie benaderd door de thread (geen st.session_state[] in de thread).
 
-for key, default in [
-    ("import_running", False),
-    ("import_log",     []),
-    ("import_done",    False),
-    ("import_total",   0),
-    ("fix_arena_running", False),
-    ("fix_arena_log",     []),
-    ("fix_arena_done",    False),
-]:
-    if key not in st.session_state:
-        st.session_state[key] = default
+if "import_state" not in st.session_state:
+    st.session_state["import_state"] = {
+        "running": False, "done": False, "total": 0, "log": [],
+    }
+
+if "fix_arena_state" not in st.session_state:
+    st.session_state["fix_arena_state"] = {
+        "running": False, "done": False, "log": [],
+    }
+
+imp = st.session_state["import_state"]
+arena = st.session_state["fix_arena_state"]
+
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
+def _run_async(coro):
+    loop = asyncio.ProactorEventLoop()
+    asyncio.set_event_loop(loop)
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
 
 
 # ── Achtergrond import functie ────────────────────────────────────────────────
 
-def run_import(email, password, player_ids):
-    """Draait volledig in een achtergrondthread — niet onderbroken door reruns."""
+def run_import(email, password, player_ids, s):
+    """s = shared state dict (niet st.session_state)."""
 
     def log(msg):
-        st.session_state["import_log"].append(msg)
-
-    # Helpers voor async in thread
-    def run_async(coro):
-        loop = asyncio.ProactorEventLoop()
-        asyncio.set_event_loop(loop)
-        try:
-            return loop.run_until_complete(coro)
-        finally:
-            loop.close()
+        s["log"].append(msg)
 
     try:
-        # Stap 1: token ophalen
         log("🔑 Inloggen op BGA ...")
-        token, cookies = run_async(
+        token, cookies = _run_async(
             get_token_and_cookies(email, password, player_ids[0], headless=True)
         )
         log(f"✅ Token: {token[:8]}... verkregen")
 
-        # Stap 2: database initialiseren
         conn = duckdb.connect(DB_FILE)
-        for mig in ["migrations/001_initial_schema.sql", "migrations/002_bga_fields.sql", "migrations/003_game_extra_fields.sql"]:
+        for mig in ["migrations/001_initial_schema.sql", "migrations/002_bga_fields.sql", "migrations/003_game_extra_fields.sql", "migrations/005_boardgames.sql"]:
             sql = (ROOT / mig).read_text(encoding="utf-8")
             for stmt in sql.split(";"):
                 stmt = stmt.strip()
@@ -83,11 +91,9 @@ def run_import(email, password, player_ids):
                     except Exception:
                         pass
 
-        # Stap 3: per speler ophalen en importeren
         total_new = 0
         for pid in player_ids:
             bga_pid_str = str(pid)
-            # Zoek since uit import_tracking
             track_row = conn.execute("""
                 SELECT last_ended_at FROM import_tracking
                 WHERE bga_player_id = ? AND boardgame_id = 1
@@ -105,7 +111,6 @@ def run_import(email, password, player_ids):
                 total_new += new
                 log(f"   ✅ {new} nieuw geïmporteerd")
 
-                # Update import_tracking
                 max_ended = conn.execute("""
                     SELECT MAX(COALESCE(g.ended_at, g.played_at))
                     FROM games g
@@ -117,44 +122,38 @@ def run_import(email, password, player_ids):
                 if new_last:
                     conn.execute("""
                         INSERT INTO import_tracking (bga_player_id, boardgame_id, last_ended_at, imported_at)
-                        VALUES (?, 1, ?, current_timestamp)
+                        VALUES (?, 1, ?, now())
                         ON CONFLICT (bga_player_id, boardgame_id)
                         DO UPDATE SET last_ended_at = EXCLUDED.last_ended_at,
-                                      imported_at = current_timestamp
+                                      imported_at = now()
                     """, [bga_pid_str, new_last])
             except Exception as e:
-                log(f"   ❌ Fout: {e}")
+                log(f"   ❌ Fout: {e}\n{traceback.format_exc()}")
 
         conn.close()
-        st.session_state["import_total"] = total_new
+        s["total"] = total_new
         log(f"🏁 Klaar — {total_new} nieuwe spellen toegevoegd")
 
     except Exception as e:
-        log(f"❌ Fout: {e}")
+        log(f"❌ Fout: {e}\n{traceback.format_exc()}")
     finally:
-        st.session_state["import_running"] = False
-        st.session_state["import_done"]    = True
+        s["running"] = False
+        s["done"] = True
 
 
 # ── Arena correctie per speler ────────────────────────────────────────────────
 
-def run_fix_arena(email, password, bga_player_id, player_name):
-    """Corrigeer arena scores voor één speler."""
+def run_fix_arena(email, password, bga_player_id, player_name, s):
+    """s = shared state dict (niet st.session_state)."""
 
     def log(msg):
-        st.session_state["fix_arena_log"].append(msg)
+        s["log"].append(msg)
 
-    def run_async(coro):
-        loop = asyncio.ProactorEventLoop()
-        asyncio.set_event_loop(loop)
-        try:
-            return loop.run_until_complete(coro)
-        finally:
-            loop.close()
+    log(f"🚀 Arena correctie gestart voor {player_name} (BGA {bga_player_id})")
 
     try:
-        log(f"🔑 Inloggen op BGA ...")
-        token, cookies = run_async(
+        log("🔑 Inloggen op BGA ...")
+        token, cookies = _run_async(
             get_token_and_cookies(email, password, bga_player_id, headless=True)
         )
         log(f"✅ Token: {token[:8]}... verkregen")
@@ -211,15 +210,15 @@ def run_fix_arena(email, password, bga_player_id, player_name):
         log(f"🏁 Klaar — {updated} arena scores bijgewerkt voor {player_name}")
 
     except Exception as e:
-        log(f"❌ Fout: {e}")
+        log(f"❌ Fout: {e}\n{traceback.format_exc()}")
     finally:
-        st.session_state["fix_arena_running"] = False
-        st.session_state["fix_arena_done"] = True
+        s["running"] = False
+        s["done"] = True
 
 
 # ── UI ────────────────────────────────────────────────────────────────────────
 
-with st.expander("⚙️ BGA Inloggegevens", expanded=not st.session_state["import_running"]):
+with st.expander("⚙️ BGA Inloggegevens", expanded=not imp["running"]):
     col1, col2 = st.columns(2)
     with col1:
         email = st.text_input("BGA Email", value=st.session_state.get("bga_email", ""), key="input_email")
@@ -258,7 +257,11 @@ with tab_import:
         imported_players = None
 
     if imported_players is not None and not imported_players.empty:
-        display_df = imported_players[["name", "bga_player_id", "games", "last_ended_at", "imported_at"]].rename(columns={
+        select_all = st.checkbox("Selecteer alles", value=False, key="import_select_all")
+
+        edit_df = imported_players[["name", "bga_player_id", "games", "last_ended_at", "imported_at"]].copy()
+        edit_df.insert(0, "✔", select_all)
+        edit_df = edit_df.rename(columns={
             "name":           "Naam",
             "bga_player_id":  "BGA ID",
             "games":          "Spellen",
@@ -266,24 +269,26 @@ with tab_import:
             "imported_at":    "Laatste import",
         })
 
-        event = st.dataframe(
-            display_df,
-            use_container_width=True,
+        result = st.data_editor(
+            edit_df,
+            width="stretch",
             hide_index=True,
-            on_select="rerun",
-            selection_mode="multi-row",
-            key="import_players_table",
+            disabled=["Naam", "BGA ID", "Spellen", "Laatste spel", "Laatste import"],
+            key="import_players_editor",
         )
 
-        selected_rows = event.selection.rows if event.selection else []
-        selected_pids = [int(imported_players.iloc[r]["bga_player_id"]) for r in selected_rows]
+        selected_pids = [
+            int(imported_players.iloc[i]["bga_player_id"])
+            for i, checked in enumerate(result["✔"])
+            if checked
+        ]
 
         st.caption(f"{len(selected_pids)} speler(s) geselecteerd")
 
         # Nieuw speler-ID toevoegen
         new_pid = st.text_input("Nieuw BGA Player ID toevoegen", placeholder="bv. 93464744")
 
-        if not st.session_state["import_running"]:
+        if not imp["running"]:
             if st.button("▶ Start import", type="primary"):
                 player_ids = list(selected_pids)
                 if new_pid and new_pid.strip().isdigit():
@@ -293,16 +298,16 @@ with tab_import:
                 elif not email or not password:
                     st.error("Vul email en wachtwoord in.")
                 else:
-                    st.session_state["bga_email"]       = email
-                    st.session_state["bga_password"]    = password
-                    st.session_state["import_running"]  = True
-                    st.session_state["import_done"]     = False
-                    st.session_state["import_log"]      = []
-                    st.session_state["import_total"]    = 0
+                    st.session_state["bga_email"] = email
+                    st.session_state["bga_password"] = password
+                    imp["running"] = True
+                    imp["done"] = False
+                    imp["total"] = 0
+                    imp["log"] = []
 
                     t = threading.Thread(
                         target=run_import,
-                        args=(email, password, player_ids),
+                        args=(email, password, player_ids, imp),
                         daemon=True,
                     )
                     t.start()
@@ -314,23 +319,23 @@ with tab_import:
         # Geen bestaande spelers — toon invoerveld
         new_pid = st.text_input("BGA Player ID", placeholder="bv. 93464744")
 
-        if not st.session_state["import_running"]:
+        if not imp["running"]:
             if st.button("▶ Start import", type="primary"):
                 if not new_pid or not new_pid.strip().isdigit():
                     st.error("Voer een geldig BGA Player ID in.")
                 elif not email or not password:
                     st.error("Vul email en wachtwoord in.")
                 else:
-                    st.session_state["bga_email"]       = email
-                    st.session_state["bga_password"]    = password
-                    st.session_state["import_running"]  = True
-                    st.session_state["import_done"]     = False
-                    st.session_state["import_log"]      = []
-                    st.session_state["import_total"]    = 0
+                    st.session_state["bga_email"] = email
+                    st.session_state["bga_password"] = password
+                    imp["running"] = True
+                    imp["done"] = False
+                    imp["total"] = 0
+                    imp["log"] = []
 
                     t = threading.Thread(
                         target=run_import,
-                        args=(email, password, [int(new_pid.strip())]),
+                        args=(email, password, [int(new_pid.strip())], imp),
                         daemon=True,
                     )
                     t.start()
@@ -339,11 +344,11 @@ with tab_import:
             st.info("⏳ Import bezig — pagina ververst automatisch ...")
             st.button("↻ Ververs status", on_click=lambda: None)
 
-    if st.session_state["import_log"]:
-        st.code("\n".join(st.session_state["import_log"][-40:]), language=None)
+    if imp["log"]:
+        st.code("\n".join(imp["log"][-40:]), language=None)
 
-    if st.session_state["import_done"] and not st.session_state["import_running"]:
-        st.success(f"✅ Import voltooid — {st.session_state['import_total']} nieuwe spellen toegevoegd")
+    if imp["done"] and not imp["running"]:
+        st.success(f"✅ Import voltooid — {imp['total']} nieuwe spellen toegevoegd")
 
 # ── Tab 2: Arena correctie per speler ────────────────────────────────────────
 
@@ -380,20 +385,20 @@ with tab_fix_arena:
         selected_player_label = st.selectbox("Speler", list(player_options.keys()))
         selected_bga_pid, selected_name = player_options[selected_player_label]
 
-        if not st.session_state["fix_arena_running"]:
+        if not arena["running"]:
             if st.button("▶ Corrigeer arena", type="primary"):
                 if not email or not password:
                     st.error("Vul eerst email en wachtwoord in (bovenaan).")
                 else:
                     st.session_state["bga_email"] = email
                     st.session_state["bga_password"] = password
-                    st.session_state["fix_arena_running"] = True
-                    st.session_state["fix_arena_done"] = False
-                    st.session_state["fix_arena_log"] = []
+                    arena["running"] = True
+                    arena["done"] = False
+                    arena["log"] = []
 
                     t = threading.Thread(
                         target=run_fix_arena,
-                        args=(email, password, int(selected_bga_pid), selected_name),
+                        args=(email, password, int(selected_bga_pid), selected_name, arena),
                         daemon=True,
                     )
                     t.start()
@@ -402,11 +407,10 @@ with tab_fix_arena:
             st.info("⏳ Arena correctie bezig ...")
             st.button("↻ Ververs status", on_click=lambda: None, key="fix_arena_refresh")
 
-        if st.session_state["fix_arena_log"]:
-            st.code("\n".join(st.session_state["fix_arena_log"][-40:]), language=None)
+        if arena["log"]:
+            st.code("\n".join(arena["log"][-40:]), language=None)
 
-        if st.session_state["fix_arena_done"] and not st.session_state["fix_arena_running"]:
+        if arena["done"] and not arena["running"]:
             st.success("✅ Arena correctie voltooid")
     else:
         st.info("Geen spelers gevonden in de database.")
-
