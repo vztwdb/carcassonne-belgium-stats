@@ -65,8 +65,8 @@ stats = conn.execute("""
     )
     SELECT
         COUNT(*)                                                           AS total_games,
-        ROUND(100.0 * SUM(CASE WHEN gp.elo_delta > 0 THEN 1 ELSE 0 END)
-              / NULLIF(SUM(CASE WHEN gp.elo_delta IS NOT NULL THEN 1 ELSE 0 END), 0), 1) AS win_pct,
+        ROUND(100.0 * SUM(CASE WHEN gp.rank = 1 THEN 1 ELSE 0 END)
+              / NULLIF(SUM(CASE WHEN gp.rank IS NOT NULL THEN 1 ELSE 0 END), 0), 1) AS win_pct,
         MAX(gp.elo_after)                                                  AS max_elo,
         MAX(gp.arena_after)                                                AS max_arena,
         ROUND(100.0 * SUM(CASE WHEN gi.num_players = 2 THEN 1 ELSE 0 END)
@@ -158,8 +158,8 @@ opponents_df = conn.execute("""
             opp_gp.player_id                                    AS opp_id,
             p.name                                              AS opp_name,
             p.country                                           AS opp_country,
-            CASE WHEN me.elo_delta > 0 THEN 1 ELSE 0 END       AS i_won,
-            CASE WHEN me.elo_delta IS NOT NULL THEN 1 ELSE 0 END AS ranked
+            CASE WHEN me.rank = 1 THEN 1 ELSE 0 END              AS i_won,
+            CASE WHEN me.rank IS NOT NULL THEN 1 ELSE 0 END      AS ranked
         FROM my_games mg
         JOIN game_players opp_gp ON opp_gp.game_id = mg.id AND opp_gp.player_id != ?
         JOIN game_players me     ON me.game_id = mg.id     AND me.player_id = ?

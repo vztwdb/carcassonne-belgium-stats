@@ -78,6 +78,8 @@ with col_d:
 with col_e:
     search = st.text_input("Zoek speler", placeholder="Naam...")
 
+only_elo = st.checkbox("Spelers met ELO", value=True, key="only_elo")
+
 # ── Statistieken per speler ───────────────────────────────────────────────────
 
 season_start = selected_season["start_date"] if selected_season else None
@@ -140,8 +142,8 @@ df = conn.execute("""
         p.country,
         p.bga_player_id,
         COUNT(gp.id)                                        AS spellen,
-        ROUND(100.0 * SUM(CASE WHEN gp.elo_delta > 0 THEN 1 ELSE 0 END)
-              / NULLIF(SUM(CASE WHEN gp.elo_delta IS NOT NULL THEN 1 ELSE 0 END), 0), 1) AS win_pct,
+        ROUND(100.0 * SUM(CASE WHEN gp.rank = 1 THEN 1 ELSE 0 END)
+              / NULLIF(SUM(CASE WHEN gp.rank IS NOT NULL THEN 1 ELSE 0 END), 0), 1) AS win_pct,
         MAX(gp.elo_after)                                   AS max_elo,
         le.elo_after                                        AS last_elo,
         MAX(gp.arena_after)                                 AS max_arena,
@@ -158,6 +160,12 @@ df = conn.execute("""
     JOIN game_info gi ON gi.game_id = gp.game_id
     LEFT JOIN last_elo le ON le.player_id = p.id
     LEFT JOIN last_arena la ON la.player_id = p.id
+    WHERE (? = false OR EXISTS (
+        SELECT 1 FROM game_players gp3
+        JOIN games g3 ON g3.id = gp3.game_id
+        WHERE gp3.player_id = p.id AND gp3.elo_after IS NOT NULL
+          AND g3.boardgame_id = ?
+    ))
     GROUP BY p.id, p.name, p.country, p.bga_player_id, le.elo_after, la.arena_after
     ORDER BY spellen DESC NULLS LAST
 
@@ -165,7 +173,8 @@ df = conn.execute("""
       0 if selected_year == "Alle jaren" else int(selected_year),
       0 if selected_year == "Alle jaren" else int(selected_year),
       season_start, season_start,
-      season_end, season_end]).df()
+      season_end, season_end,
+      only_elo, selected_bg_id]).df()
 
 conn.close()
 

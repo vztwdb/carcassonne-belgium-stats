@@ -232,26 +232,39 @@ tab_import, tab_fix_arena = st.tabs(["📥 Import", "🎯 Arena correctie"])
 with tab_import:
     st.subheader("Spelers importeren")
 
-    # Laad geïmporteerde spelers (= spelers met minstens één elo_after waarde)
+    only_imported = st.checkbox("Enkel eerder geïmporteerde spelers", value=True, key="only_imported")
+
     try:
         conn_imp = duckdb.connect(DB_FILE, read_only=True)
-        imported_players = conn_imp.execute("""
-            SELECT p.bga_player_id, p.name,
-                   COUNT(gp.id) AS games,
-                   it.last_ended_at,
-                   it.imported_at
-            FROM players p
-            JOIN game_players gp ON gp.player_id = p.id
-            LEFT JOIN import_tracking it
-                ON it.bga_player_id = p.bga_player_id AND it.boardgame_id = 1
-            WHERE p.bga_player_id IS NOT NULL
-              AND EXISTS (
-                  SELECT 1 FROM game_players gp2
-                  WHERE gp2.player_id = p.id AND gp2.elo_after IS NOT NULL
-              )
-            GROUP BY p.bga_player_id, p.name, it.last_ended_at, it.imported_at
-            ORDER BY p.name
-        """).df()
+        if only_imported:
+            imported_players = conn_imp.execute("""
+                SELECT p.bga_player_id, p.name,
+                       COUNT(gp.id) AS games,
+                       it.last_ended_at,
+                       it.imported_at
+                FROM players p
+                JOIN game_players gp ON gp.player_id = p.id
+                JOIN import_tracking it
+                    ON it.bga_player_id = p.bga_player_id AND it.boardgame_id = 1
+                WHERE p.bga_player_id IS NOT NULL
+                  AND it.imported_at IS NOT NULL
+                GROUP BY p.bga_player_id, p.name, it.last_ended_at, it.imported_at
+                ORDER BY p.name
+            """).df()
+        else:
+            imported_players = conn_imp.execute("""
+                SELECT p.bga_player_id, p.name,
+                       COUNT(gp.id) AS games,
+                       it.last_ended_at,
+                       it.imported_at
+                FROM players p
+                JOIN game_players gp ON gp.player_id = p.id
+                LEFT JOIN import_tracking it
+                    ON it.bga_player_id = p.bga_player_id AND it.boardgame_id = 1
+                WHERE p.bga_player_id IS NOT NULL
+                GROUP BY p.bga_player_id, p.name, it.last_ended_at, it.imported_at
+                ORDER BY p.name
+            """).df()
         conn_imp.close()
     except Exception:
         imported_players = None

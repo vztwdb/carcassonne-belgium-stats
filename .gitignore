@@ -8,6 +8,7 @@ venv/
 
 # Data (raw bronbestanden worden niet in git bewaard — te groot)
 data/raw/
+data/bga_session/
 
 # Database bestanden (allow carcassonne.duckdb for Streamlit Cloud deploy)
 *.db
