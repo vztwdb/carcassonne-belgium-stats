@@ -67,10 +67,12 @@ def get_or_create_player(conn: duckdb.DuckDBPyConnection, bga_id: str, name: str
     return new_id
 
 
-def import_game(conn: duckdb.DuckDBPyConnection, game: dict) -> bool:
+def import_game(conn: duckdb.DuckDBPyConnection, game: dict, importing_bga_pid: str | None = None) -> bool:
     """
     Importeer één BGA spel naar de database.
     Geeft True terug als het spel nieuw was, False als het al bestond.
+    importing_bga_pid: BGA player ID van de speler waarvoor we importeren.
+    ELO/arena data wordt enkel opgeslagen voor deze speler.
     """
     table_id = str(game.get("table_id", ""))
     if not table_id:
@@ -133,7 +135,8 @@ def import_game(conn: duckdb.DuckDBPyConnection, game: dict) -> bool:
         arena_win_val   = None
         arena_after_val = None
 
-        if i == 0:
+        is_importing_player = (importing_bga_pid is not None and bga_pid == importing_bga_pid) or (importing_bga_pid is None and i == 0)
+        if is_importing_player:
             elo_win_str     = str(game.get("elo_win",     "") or "")
             elo_after_raw   = game.get("elo_after",   None)
             elo_penalty_raw = game.get("elo_penalty",  None)

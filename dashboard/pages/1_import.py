@@ -113,7 +113,7 @@ def run_import(email, password, player_ids, s):
             try:
                 games = fetch_player_games(pid, token, cookies, since=since)
                 log(f"   📊 {len(games)} spellen gevonden")
-                new = sum(1 for g in games if import_game(conn, g))
+                new = sum(1 for g in games if import_game(conn, g, importing_bga_pid=pid))
                 total_new += new
                 log(f"   ✅ {new} nieuw geïmporteerd")
 
