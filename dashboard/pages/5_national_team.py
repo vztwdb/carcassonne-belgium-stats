@@ -428,6 +428,7 @@ df_countries = conn.execute(f"""
         d.opponent_country AS "Country",
         COUNT(DISTINCT d.id) AS "Duels",
         COUNT(DISTINCT CASE WHEN sub.duel_w > sub.duel_l THEN d.id END) AS "Duels W",
+        COUNT(DISTINCT CASE WHEN sub.duel_w = sub.duel_l THEN d.id END) AS "Duels D",
         COUNT(DISTINCT CASE WHEN sub.duel_w < sub.duel_l THEN d.id END) AS "Duels L",
         SUM(CASE WHEN nm.result = 'W' THEN 1 ELSE 0 END) AS "Matches W",
         SUM(CASE WHEN nm.result = 'L' THEN 1 ELSE 0 END) AS "Matches L",
@@ -476,6 +477,123 @@ df_countries = conn.execute(f"""
 """, params).df()
 
 if not df_countries.empty:
-    st.dataframe(df_countries, use_container_width=True, hide_index=True)
+    event_countries = st.dataframe(
+        df_countries,
+        use_container_width=True,
+        hide_index=True,
+        on_select="rerun",
+        selection_mode="single-row",
+        key="nt_countries_table",
+    )
+
+    # Handle country row click
+    selected_country = None
+    if event_countries.selection and event_countries.selection.rows:
+        selected_row_c = event_countries.selection.rows[0]
+        selected_country = df_countries.iloc[selected_row_c]["Country"]
+
+    if selected_country:
+        st.subheader(f"All games vs {selected_country}")
+
+        country_where = ["d.opponent_country = ?"]
+        country_params = [selected_country]
+        if selected_tourn_id:
+            country_where.append("d.tournament_id = ?")
+            country_params.append(selected_tourn_id)
+        if selected_year != "All years":
+            country_where.append("YEAR(d.date_played) = ?")
+            country_params.append(int(selected_year))
+
+        country_where_sql = "WHERE " + " AND ".join(country_where)
+
+        df_country_games = conn.execute(f"""
+            SELECT
+                d.date_played AS "Date",
+                t.name AS "Tournament",
+                d.stage AS "Stage",
+                p.name AS "Player BE",
+                op.name AS "Opponent",
+                nm.result AS "Result",
+                nm.score_belgium AS "Score BE",
+                nm.score_opponent AS "Score Opp",
+                nm.notes AS "Notes",
+                g1.bga_table_id AS bga_id_1,
+                g2.bga_table_id AS bga_id_2,
+                g3.bga_table_id AS bga_id_3,
+                g4.bga_table_id AS bga_id_4,
+                g5.bga_table_id AS bga_id_5,
+                CAST(gp1_be.score AS INTEGER) AS score_be_1,
+                CAST(gp1_opp.score AS INTEGER) AS score_opp_1,
+                CAST(gp2_be.score AS INTEGER) AS score_be_2,
+                CAST(gp2_opp.score AS INTEGER) AS score_opp_2,
+                CAST(gp3_be.score AS INTEGER) AS score_be_3,
+                CAST(gp3_opp.score AS INTEGER) AS score_opp_3,
+                CAST(gp4_be.score AS INTEGER) AS score_be_4,
+                CAST(gp4_opp.score AS INTEGER) AS score_opp_4,
+                CAST(gp5_be.score AS INTEGER) AS score_be_5,
+                CAST(gp5_opp.score AS INTEGER) AS score_opp_5
+            FROM nations_matches nm
+            JOIN nations_competition_duels d ON nm.duel_id = d.id
+            JOIN tournaments t ON d.tournament_id = t.id
+            JOIN players p ON nm.player_id = p.id
+            JOIN players op ON nm.opponent_player_id = op.id
+            LEFT JOIN games g1 ON nm.game_id_1 = g1.id
+            LEFT JOIN games g2 ON nm.game_id_2 = g2.id
+            LEFT JOIN games g3 ON nm.game_id_3 = g3.id
+            LEFT JOIN games g4 ON nm.game_id_4 = g4.id
+            LEFT JOIN games g5 ON nm.game_id_5 = g5.id
+            LEFT JOIN game_players gp1_be ON gp1_be.game_id = nm.game_id_1 AND gp1_be.player_id = nm.player_id
+            LEFT JOIN game_players gp1_opp ON gp1_opp.game_id = nm.game_id_1 AND gp1_opp.player_id = nm.opponent_player_id
+            LEFT JOIN game_players gp2_be ON gp2_be.game_id = nm.game_id_2 AND gp2_be.player_id = nm.player_id
+            LEFT JOIN game_players gp2_opp ON gp2_opp.game_id = nm.game_id_2 AND gp2_opp.player_id = nm.opponent_player_id
+            LEFT JOIN game_players gp3_be ON gp3_be.game_id = nm.game_id_3 AND gp3_be.player_id = nm.player_id
+            LEFT JOIN game_players gp3_opp ON gp3_opp.game_id = nm.game_id_3 AND gp3_opp.player_id = nm.opponent_player_id
+            LEFT JOIN game_players gp4_be ON gp4_be.game_id = nm.game_id_4 AND gp4_be.player_id = nm.player_id
+            LEFT JOIN game_players gp4_opp ON gp4_opp.game_id = nm.game_id_4 AND gp4_opp.player_id = nm.opponent_player_id
+            LEFT JOIN game_players gp5_be ON gp5_be.game_id = nm.game_id_5 AND gp5_be.player_id = nm.player_id
+            LEFT JOIN game_players gp5_opp ON gp5_opp.game_id = nm.game_id_5 AND gp5_opp.player_id = nm.opponent_player_id
+            {country_where_sql}
+            ORDER BY d.date_played DESC NULLS LAST, nm.result DESC
+        """, country_params).df()
+
+        if not df_country_games.empty:
+            for i in range(1, 6):
+                col_name = f"bga_id_{i}"
+                link_col = f"Game {i}"
+                score_col = f"Score {i}"
+                df_country_games[link_col] = df_country_games[col_name].apply(
+                    lambda x: f"{BGA_TABLE_URL}{x}" if pd.notna(x) and x else None
+                )
+                be_col = f"score_be_{i}"
+                opp_col = f"score_opp_{i}"
+                df_country_games[score_col] = df_country_games.apply(
+                    lambda row, b=be_col, o=opp_col: (
+                        f"{int(row[b])} - {int(row[o])}"
+                        if pd.notna(row[b]) and pd.notna(row[o]) else None
+                    ), axis=1
+                )
+
+            display_cols_c = ["Date", "Tournament", "Stage", "Player BE", "Opponent",
+                              "Result", "Score BE", "Score Opp",
+                              "Score 1", "Game 1", "Score 2", "Game 2", "Score 3", "Game 3"]
+            for i in range(4, 6):
+                if df_country_games[f"Game {i}"].notna().any() or df_country_games[f"Score {i}"].notna().any():
+                    display_cols_c.extend([f"Score {i}", f"Game {i}"])
+            display_cols_c.append("Notes")
+
+            game_col_config_c = {}
+            for i in range(1, 6):
+                col = f"Game {i}"
+                if col in display_cols_c:
+                    game_col_config_c[col] = st.column_config.LinkColumn(col, display_text="🎲")
+
+            st.dataframe(
+                df_country_games[display_cols_c],
+                use_container_width=True,
+                hide_index=True,
+                column_config=game_col_config_c,
+            )
+        else:
+            st.info(f"No games found vs {selected_country} with current filters.")
 
 conn.close()
