@@ -5,8 +5,8 @@ import streamlit as st
 # ── Page definitions ─────────────────────────────────────────────────────────
 
 public_pages = [
-    st.Page("pages/2_players.py", title="Spelers", icon="👤"),
-    st.Page("pages/3_player_detail.py", title="Speler detail", icon="📊"),
+    st.Page("pages/2_players.py", title="Players", icon="👤"),
+    st.Page("pages/3_player_detail.py", title="Player detail", icon="📊"),
     st.Page("pages/4_head_to_head.py", title="Head to Head", icon="⚔️"),
     st.Page("pages/5_national_team.py", title="National Team", icon="🇧🇪"),
     st.Page("pages/6_bcoc.py", title="BCOC", icon="🏆"),

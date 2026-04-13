@@ -1,4 +1,4 @@
-"""Country duel — vergelijk line-ups van twee landen op basis van historische BGA-spellen."""
+"""Country duel — compare line-ups of two countries based on historical BGA games."""
 from pathlib import Path
 
 import duckdb
@@ -90,10 +90,10 @@ def country_label(code: str) -> str:
     return f"{code} ({name})" if name else code
 
 st.title("🆚 Country Duel")
-st.caption("Kies een line-up voor elk land en zie alle historische spellen tussen deze spelers.")
+st.caption("Pick a line-up for each country and see all historical games between these players.")
 
 if not DB_PATH.exists():
-    st.warning("Geen database gevonden.")
+    st.warning("No database found.")
     st.stop()
 
 conn = duckdb.connect(str(DB_PATH), read_only=True)
@@ -119,22 +119,22 @@ col_a, col_b = st.columns([2, 2])
 
 with col_a:
     default_a = country_list.index("BE") if "BE" in country_list else 0
-    country_a = st.selectbox("Land A", country_list, index=default_a, format_func=country_label)
+    country_a = st.selectbox("Country A", country_list, index=default_a, format_func=country_label)
 
 with col_b:
     other_countries = [c for c in country_list if c != country_a]
-    country_b = st.selectbox("Land B", other_countries, format_func=country_label)
+    country_b = st.selectbox("Country B", other_countries, format_func=country_label)
 
 col_nt_a, col_nt_b = st.columns(2)
 with col_nt_a:
     only_nt_a = st.checkbox(
-        f"Enkel nationale ploeg ({country_a})",
+        f"National team only ({country_a})",
         value=(country_a == "BE"),
         key="cd_only_nt_a",
     )
 with col_nt_b:
     only_nt_b = st.checkbox(
-        f"Enkel nationale ploeg ({country_b})",
+        f"National team only ({country_b})",
         value=(country_b == "BE"),
         key="cd_only_nt_b",
     )
@@ -170,7 +170,7 @@ col_pa, col_pb = st.columns(2)
 with col_pa:
     st.markdown(f"### Line-up {country_a}")
     lineup_a = st.multiselect(
-        f"Spelers {country_a}",
+        f"Players {country_a}",
         options=list(label_a.keys()),
         format_func=lambda pid: label_a[pid],
         key="cd_lineup_a",
@@ -178,14 +178,14 @@ with col_pa:
 with col_pb:
     st.markdown(f"### Line-up {country_b}")
     lineup_b = st.multiselect(
-        f"Spelers {country_b}",
+        f"Players {country_b}",
         options=list(label_b.keys()),
         format_func=lambda pid: label_b[pid],
         key="cd_lineup_b",
     )
 
 if not lineup_a or not lineup_b:
-    st.info("Selecteer minstens één speler voor elk land.")
+    st.info("Select at least one player for each country.")
     conn.close()
     st.stop()
 
@@ -222,7 +222,7 @@ pairs_df = conn.execute(
 ).df()
 
 if pairs_df.empty:
-    st.warning("Geen gemeenschappelijke spellen gevonden voor deze line-ups.")
+    st.warning("No common games found for these line-ups.")
     conn.close()
     st.stop()
 
@@ -276,18 +276,18 @@ wins_a = (pair_rows["outcome"] == "A").sum()
 wins_b = (pair_rows["outcome"] == "B").sum()
 draws = (pair_rows["outcome"] == "D").sum()
 
-st.subheader("Overzicht")
+st.subheader("Overview")
 m1, m2, m3, m4, m5 = st.columns(5)
-m1.metric("Spellen", len(unique_game_ids))
-m2.metric("Pair-encounters", total_pairs)
-m3.metric(f"Winst {country_a}", int(wins_a))
-m4.metric(f"Winst {country_b}", int(wins_b))
-m5.metric("Gelijk", int(draws))
+m1.metric("Games", len(unique_game_ids))
+m2.metric("Pair encounters", total_pairs)
+m3.metric(f"Wins {country_a}", int(wins_a))
+m4.metric(f"Wins {country_b}", int(wins_b))
+m5.metric("Draws", int(draws))
 
 # ── Head-to-head matrix ──────────────────────────────────────────────────────
 
 st.subheader("Head-to-head matrix")
-st.caption("Elke cel toont W-L vanuit het perspectief van de speler uit Land A (rij).")
+st.caption("Each cell shows W-L from the perspective of the Country A player (row).")
 
 name_a = {int(row["id"]): row["name"] for _, row in players_a.iterrows()}
 name_b = {int(row["id"]): row["name"] for _, row in players_b.iterrows()}
@@ -340,10 +340,10 @@ if matrix_event.selection and matrix_event.selection.columns:
 # ── Games list ───────────────────────────────────────────────────────────────
 
 if filter_label_parts:
-    st.subheader("Spellen — " + " / ".join(filter_label_parts))
-    st.caption("Klik de selectie weg in de matrix om terug alle spellen te zien.")
+    st.subheader("Games — " + " / ".join(filter_label_parts))
+    st.caption("Clear the matrix selection to see all games again.")
 else:
-    st.subheader("Spellen")
+    st.subheader("Games")
 
 games_detail = conn.execute(f"""
     SELECT
@@ -396,15 +396,15 @@ for gid, grp in games_detail.groupby("game_id", sort=False):
         elif w_pid in set_b:
             winner = country_b
         else:
-            winner = "Ander"
+            winner = "Other"
     else:
-        winner = "Gelijk"
+        winner = "Draw"
 
     rows.append({
-        "Datum": datum,
+        "Date": datum,
         f"{country_a} line-up": fmt(a_part),
         f"{country_b} line-up": fmt(b_part),
-        "Winnaar": winner,
+        "Winner": winner,
         "BGA": f"{BGA_TABLE_URL}{bga}" if bga else None,
     })
 

@@ -14,8 +14,8 @@ ELO_BASE = 1300
 # ── Read params ──────────────────────────────────────────────────────────────
 
 if "h2h_player" not in st.session_state or "h2h_opponent" not in st.session_state:
-    st.warning("Selecteer eerst een tegenstander via een speler detail pagina.")
-    if st.button("← Terug naar spelers"):
+    st.warning("Select an opponent first via a player detail page.")
+    if st.button("← Back to players"):
         st.switch_page("pages/2_players.py")
     st.stop()
 
@@ -31,7 +31,7 @@ p1 = conn.execute("SELECT name FROM players WHERE id = ?", [player_id]).fetchone
 p2 = conn.execute("SELECT name FROM players WHERE id = ?", [opponent_id]).fetchone()
 
 if not p1 or not p2:
-    st.error("Speler(s) niet gevonden.")
+    st.error("Player(s) not found.")
     conn.close()
     st.stop()
 
@@ -42,12 +42,12 @@ st.title(f"⚔️ {p1_name} vs {p2_name}")
 
 col_back1, col_back2 = st.columns([1, 1])
 with col_back1:
-    if st.button(f"← Terug naar {p1_name}"):
+    if st.button(f"← Back to {p1_name}"):
         st.session_state["player_detail_id"] = player_id
         st.session_state["player_detail_bg"] = boardgame_id
         st.switch_page("pages/3_player_detail.py")
 with col_back2:
-    if st.button(f"← Terug naar {p2_name}"):
+    if st.button(f"← Back to {p2_name}"):
         st.session_state["player_detail_id"] = opponent_id
         st.session_state["player_detail_bg"] = boardgame_id
         st.switch_page("pages/3_player_detail.py")
@@ -75,10 +75,10 @@ summary = conn.execute("""
 total, wins_p1, wins_p2, draws = summary
 
 col1, col2, col3, col4 = st.columns(4)
-col1.metric("Spellen", total)
-col2.metric(f"Winst {p1_name}", wins_p1)
-col3.metric(f"Winst {p2_name}", wins_p2)
-col4.metric("Gelijk", draws)
+col1.metric("Games", total)
+col2.metric(f"Wins {p1_name}", wins_p1)
+col3.metric(f"Wins {p2_name}", wins_p2)
+col4.metric("Draws", draws)
 
 # ── Games list ───────────────────────────────────────────────────────────────
 
@@ -90,7 +90,7 @@ games_df = conn.execute("""
         CASE
             WHEN me.score > opp.score THEN ?
             WHEN me.score < opp.score THEN ?
-            ELSE 'Gelijk'
+            ELSE 'Draw'
         END                                  AS winnaar,
         me.elo_after                         AS elo_p1,
         opp.elo_after                        AS elo_p2,
@@ -105,10 +105,10 @@ games_df = conn.execute("""
 conn.close()
 
 if games_df.empty:
-    st.info("Geen spellen gevonden.")
+    st.info("No games found.")
     st.stop()
 
-# ELO correctie
+# ELO correction
 for col in ("elo_p1", "elo_p2"):
     games_df[col] = games_df[col].where(games_df[col].isna(), games_df[col] - ELO_BASE)
 
@@ -118,10 +118,10 @@ games_df["BGA"] = games_df["bga_table_id"].apply(
 )
 
 display_df = games_df[["datum", "score_p1", "score_p2", "winnaar", "elo_p1", "elo_p2", "BGA"]].rename(columns={
-    "datum":    "Datum",
+    "datum":    "Date",
     "score_p1": f"Score {p1_name}",
     "score_p2": f"Score {p2_name}",
-    "winnaar":  "Winnaar",
+    "winnaar":  "Winner",
     "elo_p1":   f"ELO {p1_name}",
     "elo_p2":   f"ELO {p2_name}",
 })
@@ -131,6 +131,6 @@ st.dataframe(
     use_container_width=True,
     hide_index=True,
     column_config={
-        "BGA": st.column_config.LinkColumn("BGA", display_text="🎲 Bekijk"),
+        "BGA": st.column_config.LinkColumn("BGA", display_text="🎲 View"),
     },
 )

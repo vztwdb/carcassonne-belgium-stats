@@ -14,7 +14,7 @@ BGA_TABLE_URL = "https://boardgamearena.com/table?table="
 st.title("BCOC Tournaments")
 
 if not DB_PATH.exists():
-    st.warning("Geen database gevonden.")
+    st.warning("No database found.")
     st.stop()
 
 conn = duckdb.connect(str(DB_PATH), read_only=True)

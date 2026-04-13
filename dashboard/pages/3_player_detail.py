@@ -14,8 +14,8 @@ ELO_BASE = 1300
 # ── Read player from session state ───────────────────────────────────────────
 
 if "player_detail_id" not in st.session_state:
-    st.warning("Selecteer eerst een speler via de Spelers pagina.")
-    if st.button("← Terug naar spelers"):
+    st.warning("Select a player first via the Players page.")
+    if st.button("← Back to players"):
         st.switch_page("pages/2_players.py")
     st.stop()
 
@@ -33,7 +33,7 @@ player = conn.execute("""
 """, [player_id, boardgame_id]).fetchone()
 
 if not player:
-    st.error("Speler niet gevonden.")
+    st.error("Player not found.")
     conn.close()
     st.stop()
 
@@ -45,11 +45,11 @@ st.title(f"👤 {p_name}")
 
 col_back, col_bga, _ = st.columns([1, 1, 4])
 with col_back:
-    if st.button("← Terug naar spelers"):
+    if st.button("← Back to players"):
         st.switch_page("pages/2_players.py")
 with col_bga:
     if p_bga_id:
-        st.link_button("🎲 BGA profiel", f"https://boardgamearena.com/player?id={p_bga_id}")
+        st.link_button("🎲 BGA profile", f"https://boardgamearena.com/player?id={p_bga_id}")
 
 # ── Summary stats ────────────────────────────────────────────────────────────
 
@@ -86,23 +86,23 @@ stats = conn.execute("""
 total_games, win_pct, max_elo, max_arena, pct_2p, pct_rt, pct_basis, first_game, last_game = stats
 
 col1, col2, col3, col4 = st.columns(4)
-col1.metric("Land", p_country or "?")
-col2.metric("Spellen", total_games)
+col1.metric("Country", p_country or "?")
+col2.metric("Games", total_games)
 col3.metric("Win%", f"{win_pct}%" if win_pct is not None else "–")
 col4.metric("Max ELO", int(max_elo - ELO_BASE) if max_elo is not None else "–")
 
 col5, col6, col7, col8 = st.columns(4)
 col5.metric("Max Arena", int(max_arena) if max_arena is not None else "–")
-col6.metric("% 2 spelers", f"{pct_2p}%" if pct_2p is not None else "–")
+col6.metric("% 2 players", f"{pct_2p}%" if pct_2p is not None else "–")
 col7.metric("% Realtime", f"{pct_rt}%" if pct_rt is not None else "–")
-col8.metric("% Basisspel", f"{pct_basis}%" if pct_basis is not None else "–")
+col8.metric("% Base game", f"{pct_basis}%" if pct_basis is not None else "–")
 
 if first_game and last_game:
-    st.caption(f"{bg_name} — van {first_game:%Y-%m-%d} tot {last_game:%Y-%m-%d}")
+    st.caption(f"{bg_name} — from {first_game:%Y-%m-%d} to {last_game:%Y-%m-%d}")
 
 # ── ELO Evolution ────────────────────────────────────────────────────────────
 
-st.subheader("ELO evolutie")
+st.subheader("ELO evolution")
 
 elo_df = conn.execute("""
     SELECT
@@ -117,14 +117,14 @@ elo_df = conn.execute("""
 """, [player_id, boardgame_id]).df()
 
 if elo_df.empty:
-    st.info("Geen ELO data beschikbaar.")
+    st.info("No ELO data available.")
 else:
     elo_df["elo_after"] = elo_df["elo_after"] - ELO_BASE
     st.line_chart(elo_df.set_index("datum")["elo_after"], use_container_width=True)
 
 # ── Opponents ────────────────────────────────────────────────────────────────
 
-st.subheader("Tegenstanders")
+st.subheader("Opponents")
 
 opp_col1, opp_col2 = st.columns([2, 2])
 
@@ -137,13 +137,13 @@ with opp_col1:
           AND COALESCE(g.ended_at, g.played_at) IS NOT NULL
         ORDER BY yr DESC
     """, [player_id, boardgame_id]).fetchall()
-    opp_year_options = ["Alle jaren"] + [str(r[0]) for r in opp_years]
-    opp_selected_year = st.selectbox("Jaar", opp_year_options, key="opp_year")
+    opp_year_options = ["All years"] + [str(r[0]) for r in opp_years]
+    opp_selected_year = st.selectbox("Year", opp_year_options, key="opp_year")
 
 with opp_col2:
-    opp_search = st.text_input("Zoek tegenstander", placeholder="Naam...", key="opp_search")
+    opp_search = st.text_input("Search opponent", placeholder="Name...", key="opp_search")
 
-year_filter = 0 if opp_selected_year == "Alle jaren" else int(opp_selected_year)
+year_filter = 0 if opp_selected_year == "All years" else int(opp_selected_year)
 
 opponents_df = conn.execute("""
     WITH my_games AS (
@@ -182,9 +182,9 @@ if opp_search:
     opponents_df = opponents_df[opponents_df["opp_name"].str.contains(opp_search, case=False, na=False)]
 
 if opponents_df.empty:
-    st.info("Geen tegenstanders gevonden.")
+    st.info("No opponents found.")
 else:
-    st.caption(f"{len(opponents_df)} tegenstander(s)")
+    st.caption(f"{len(opponents_df)} opponent(s)")
 
     # Navigate to head-to-head on selection from previous rerun
     if "go_to_h2h_opp" in st.session_state:
@@ -194,9 +194,9 @@ else:
         st.switch_page("pages/4_head_to_head.py")
 
     opp_display = opponents_df[["opp_name", "opp_country", "spellen", "win_pct"]].rename(columns={
-        "opp_name":    "Naam",
-        "opp_country": "Land",
-        "spellen":     "Spellen",
+        "opp_name":    "Name",
+        "opp_country": "Country",
+        "spellen":     "Games",
         "win_pct":     "Win%",
     })
 

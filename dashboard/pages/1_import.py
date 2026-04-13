@@ -19,7 +19,7 @@ from pathlib import Path
 import streamlit as st
 
 if not os.environ.get("CARCASSONNE_ADMIN"):
-    st.error("Deze pagina is niet beschikbaar.")
+    st.error("This page is not available.")
     st.stop()
 
 import duckdb
@@ -32,8 +32,8 @@ from src.importers.bga_importer import import_game, DB_PATH
 ROOT    = Path(__file__).parents[2]
 DB_FILE = str(ROOT / DB_PATH)
 
-st.title("📥 BGA Data Importeren")
-st.caption("Haal speldata op van BoardGameArena en importeer in de database")
+st.title("📥 Import BGA Data")
+st.caption("Fetch game data from BoardGameArena and import into the database")
 
 
 # ── Thread-safe shared state ─────────────────────────────────────────────────
@@ -80,11 +80,11 @@ def run_import(email, password, player_ids, s):
         s["log"].append(msg)
 
     try:
-        log("🔑 Inloggen op BGA ...")
+        log("🔑 Logging into BGA ...")
         token, cookies = _run_async(
             get_token_and_cookies(email, password, player_ids[0], headless=True)
         )
-        log(f"✅ Token: {token[:8]}... verkregen")
+        log(f"✅ Token: {token[:8]}... obtained")
 
         conn = duckdb.connect(DB_FILE)
         for mig in ["migrations/001_initial_schema.sql", "migrations/002_bga_fields.sql", "migrations/003_game_extra_fields.sql", "migrations/005_boardgames.sql"]:
@@ -107,15 +107,15 @@ def run_import(email, password, player_ids, s):
             since = track_row[0] if track_row and track_row[0] else None
 
             if since:
-                log(f"👤 Speler {pid} ophalen (sinds {since.date()}) ...")
+                log(f"👤 Fetching player {pid} (since {since.date()}) ...")
             else:
-                log(f"👤 Speler {pid} ophalen (volledige historie) ...")
+                log(f"👤 Fetching player {pid} (full history) ...")
             try:
                 games = fetch_player_games(pid, token, cookies, since=since)
-                log(f"   📊 {len(games)} spellen gevonden")
+                log(f"   📊 {len(games)} games found")
                 new = sum(1 for g in games if import_game(conn, g, importing_bga_pid=pid))
                 total_new += new
-                log(f"   ✅ {new} nieuw geïmporteerd")
+                log(f"   ✅ {new} newly imported")
 
                 max_ended = conn.execute("""
                     SELECT MAX(COALESCE(g.ended_at, g.played_at))
@@ -134,14 +134,14 @@ def run_import(email, password, player_ids, s):
                                       imported_at = now()
                     """, [bga_pid_str, new_last])
             except Exception as e:
-                log(f"   ❌ Fout: {e}\n{traceback.format_exc()}")
+                log(f"   ❌ Error: {e}\n{traceback.format_exc()}")
 
         conn.close()
         s["total"] = total_new
-        log(f"🏁 Klaar — {total_new} nieuwe spellen toegevoegd")
+        log(f"🏁 Done — {total_new} new games added")
 
     except Exception as e:
-        log(f"❌ Fout: {e}\n{traceback.format_exc()}")
+        log(f"❌ Error: {e}\n{traceback.format_exc()}")
     finally:
         s["running"] = False
         s["done"] = True
@@ -155,18 +155,18 @@ def run_fix_arena(email, password, bga_player_id, player_name, s):
     def log(msg):
         s["log"].append(msg)
 
-    log(f"🚀 Arena correctie gestart voor {player_name} (BGA {bga_player_id})")
+    log(f"🚀 Arena correction started for {player_name} (BGA {bga_player_id})")
 
     try:
-        log("🔑 Inloggen op BGA ...")
+        log("🔑 Logging into BGA ...")
         token, cookies = _run_async(
             get_token_and_cookies(email, password, bga_player_id, headless=True)
         )
-        log(f"✅ Token: {token[:8]}... verkregen")
+        log(f"✅ Token: {token[:8]}... obtained")
 
-        log(f"👤 Games ophalen voor {player_name} ({bga_player_id}) ...")
+        log(f"👤 Fetching games for {player_name} ({bga_player_id}) ...")
         games = fetch_player_games(bga_player_id, token, cookies)
-        log(f"   📊 {len(games)} games opgehaald")
+        log(f"   📊 {len(games)} games fetched")
 
         conn = duckdb.connect(DB_FILE)
         updated = 0
@@ -213,16 +213,16 @@ def run_fix_arena(email, password, bga_player_id, player_name, s):
                     updated += 1
 
         conn.close()
-        log(f"🏁 Klaar — {updated} arena scores bijgewerkt voor {player_name}")
+        log(f"🏁 Done — {updated} arena scores updated for {player_name}")
 
     except Exception as e:
-        log(f"❌ Fout: {e}\n{traceback.format_exc()}")
+        log(f"❌ Error: {e}\n{traceback.format_exc()}")
     finally:
         s["running"] = False
         s["done"] = True
 
 
-# ── Landencontrole ───────────────────────────────────────────────────────────
+# ── Country check ────────────────────────────────────────────────────────────
 
 def run_country_check(email, password, s):
     """s = shared state dict."""
@@ -238,15 +238,15 @@ def run_country_check(email, password, s):
         conn.close()
 
         if not players:
-            log("Geen spelers zonder land gevonden.")
+            log("No players without country found.")
             return
 
-        log(f"🔑 Inloggen op BGA ...")
+        log(f"🔑 Logging into BGA ...")
         first_pid = int(players[0][2])
         token, cookies = _run_async(
             get_token_and_cookies(email, password, first_pid, headless=True)
         )
-        log(f"✅ Token verkregen — {len(players)} spelers te controleren\n")
+        log(f"✅ Token obtained — {len(players)} players to check\n")
 
         updated = 0
         for internal_id, name, bga_pid in players:
@@ -259,13 +259,13 @@ def run_country_check(email, password, s):
                 log(f"  ✅ {name}: {fetched}")
                 updated += 1
             else:
-                log(f"  ⚠️  {name}: niet gevonden → UNKNOWN")
+                log(f"  ⚠️  {name}: not found → UNKNOWN")
 
         s["updated"] = updated
-        log(f"\n🏁 Klaar — {updated} landen bijgewerkt")
+        log(f"\n🏁 Done — {updated} countries updated")
 
     except Exception as e:
-        log(f"❌ Fout: {e}\n{traceback.format_exc()}")
+        log(f"❌ Error: {e}\n{traceback.format_exc()}")
     finally:
         s["running"] = False
         s["done"] = True
@@ -273,22 +273,22 @@ def run_country_check(email, password, s):
 
 # ── UI ────────────────────────────────────────────────────────────────────────
 
-with st.expander("⚙️ BGA Inloggegevens", expanded=not imp["running"]):
+with st.expander("⚙️ BGA Credentials", expanded=not imp["running"]):
     col1, col2 = st.columns(2)
     with col1:
         email = st.text_input("BGA Email", value=st.session_state.get("bga_email", ""), key="input_email")
     with col2:
-        password = st.text_input("BGA Wachtwoord", type="password", value=st.session_state.get("bga_password", ""), key="input_password")
+        password = st.text_input("BGA Password", type="password", value=st.session_state.get("bga_password", ""), key="input_password")
 
 # ── Tabs ─────────────────────────────────────────────────────────────────────
 
-tab_import, tab_fix_arena, tab_countries = st.tabs(["📥 Import", "🎯 Arena correctie", "🌍 Landen"])
+tab_import, tab_fix_arena, tab_countries = st.tabs(["📥 Import", "🎯 Arena correction", "🌍 Countries"])
 
 with tab_import:
-    st.subheader("Spelers importeren")
+    st.subheader("Import players")
 
-    only_imported = st.checkbox("Enkel eerder geïmporteerde spelers", value=True, key="only_imported")
-    only_nt_import = st.checkbox("Nationale ploeg", value=False, key="only_nt_import")
+    only_imported = st.checkbox("Only previously imported players", value=True, key="only_imported")
+    only_nt_import = st.checkbox("National team", value=False, key="only_nt_import")
 
     try:
         conn_imp = duckdb.connect(DB_FILE, read_only=True)
@@ -328,23 +328,23 @@ with tab_import:
         imported_players = None
 
     if imported_players is not None and not imported_players.empty:
-        select_all = st.checkbox("Selecteer alles", value=False, key="import_select_all")
+        select_all = st.checkbox("Select all", value=False, key="import_select_all")
 
         edit_df = imported_players[["name", "bga_player_id", "games", "last_ended_at", "imported_at"]].copy()
         edit_df.insert(0, "✔", select_all)
         edit_df = edit_df.rename(columns={
-            "name":           "Naam",
+            "name":           "Name",
             "bga_player_id":  "BGA ID",
-            "games":          "Spellen",
-            "last_ended_at":  "Laatste spel",
-            "imported_at":    "Laatste import",
+            "games":          "Games",
+            "last_ended_at":  "Last game",
+            "imported_at":    "Last import",
         })
 
         result = st.data_editor(
             edit_df,
             width="stretch",
             hide_index=True,
-            disabled=["Naam", "BGA ID", "Spellen", "Laatste spel", "Laatste import"],
+            disabled=["Name", "BGA ID", "Games", "Last game", "Last import"],
             key="import_players_editor",
         )
 
@@ -354,10 +354,10 @@ with tab_import:
             if checked
         ]
 
-        st.caption(f"{len(selected_pids)} speler(s) geselecteerd")
+        st.caption(f"{len(selected_pids)} player(s) selected")
 
-        # Nieuw speler-ID toevoegen
-        new_pid = st.text_input("Nieuw BGA Player ID toevoegen", placeholder="bv. 93464744")
+        # Add new player ID
+        new_pid = st.text_input("Add new BGA Player ID", placeholder="e.g. 93464744")
 
         if not imp["running"]:
             if st.button("▶ Start import", type="primary"):
@@ -365,9 +365,9 @@ with tab_import:
                 if new_pid and new_pid.strip().isdigit():
                     player_ids.append(int(new_pid.strip()))
                 if not player_ids:
-                    st.error("Selecteer minstens één speler of voeg een nieuw ID toe.")
+                    st.error("Select at least one player or add a new ID.")
                 elif not email or not password:
-                    st.error("Vul email en wachtwoord in.")
+                    st.error("Fill in email and password.")
                 else:
                     st.session_state["bga_email"] = email
                     st.session_state["bga_password"] = password
@@ -384,18 +384,18 @@ with tab_import:
                     t.start()
                     st.rerun()
         else:
-            st.info("⏳ Import bezig — pagina ververst automatisch ...")
-            st.button("↻ Ververs status", on_click=lambda: None)
+            st.info("⏳ Import running — page refreshes automatically ...")
+            st.button("↻ Refresh status", on_click=lambda: None)
     else:
-        # Geen bestaande spelers — toon invoerveld
-        new_pid = st.text_input("BGA Player ID", placeholder="bv. 93464744")
+        # No existing players — show input field
+        new_pid = st.text_input("BGA Player ID", placeholder="e.g. 93464744")
 
         if not imp["running"]:
             if st.button("▶ Start import", type="primary"):
                 if not new_pid or not new_pid.strip().isdigit():
-                    st.error("Voer een geldig BGA Player ID in.")
+                    st.error("Enter a valid BGA Player ID.")
                 elif not email or not password:
-                    st.error("Vul email en wachtwoord in.")
+                    st.error("Fill in email and password.")
                 else:
                     st.session_state["bga_email"] = email
                     st.session_state["bga_password"] = password
@@ -412,20 +412,20 @@ with tab_import:
                     t.start()
                     st.rerun()
         else:
-            st.info("⏳ Import bezig — pagina ververst automatisch ...")
-            st.button("↻ Ververs status", on_click=lambda: None)
+            st.info("⏳ Import running — page refreshes automatically ...")
+            st.button("↻ Refresh status", on_click=lambda: None)
 
     if imp["log"]:
         st.code("\n".join(imp["log"][-40:]), language=None)
 
     if imp["done"] and not imp["running"]:
-        st.success(f"✅ Import voltooid — {imp['total']} nieuwe spellen toegevoegd")
+        st.success(f"✅ Import complete — {imp['total']} new games added")
 
 # ── Tab 2: Arena correctie per speler ────────────────────────────────────────
 
 with tab_fix_arena:
-    st.subheader("Arena scores corrigeren per speler")
-    st.caption("Selecteer een speler om de arena scores opnieuw op te halen van BGA.")
+    st.subheader("Fix arena scores per player")
+    st.caption("Select a player to re-fetch arena scores from BGA.")
 
     try:
         conn_players = duckdb.connect(DB_FILE, read_only=True)
@@ -450,16 +450,16 @@ with tab_fix_arena:
 
     if arena_players:
         player_options = {
-            f"{name} ({games} games, {with_arena} arena, {without_arena} zonder)": (bga_pid, name)
+            f"{name} ({games} games, {with_arena} arena, {without_arena} without)": (bga_pid, name)
             for _id, name, bga_pid, games, with_arena, without_arena in arena_players
         }
-        selected_player_label = st.selectbox("Speler", list(player_options.keys()))
+        selected_player_label = st.selectbox("Player", list(player_options.keys()))
         selected_bga_pid, selected_name = player_options[selected_player_label]
 
         if not arena["running"]:
-            if st.button("▶ Corrigeer arena", type="primary"):
+            if st.button("▶ Fix arena", type="primary"):
                 if not email or not password:
-                    st.error("Vul eerst email en wachtwoord in (bovenaan).")
+                    st.error("Fill in email and password first (top of page).")
                 else:
                     st.session_state["bga_email"] = email
                     st.session_state["bga_password"] = password
@@ -475,27 +475,27 @@ with tab_fix_arena:
                     t.start()
                     st.rerun()
         else:
-            st.info("⏳ Arena correctie bezig ...")
-            st.button("↻ Ververs status", on_click=lambda: None, key="fix_arena_refresh")
+            st.info("⏳ Arena correction running ...")
+            st.button("↻ Refresh status", on_click=lambda: None, key="fix_arena_refresh")
 
         if arena["log"]:
             st.code("\n".join(arena["log"][-40:]), language=None)
 
         if arena["done"] and not arena["running"]:
-            st.success("✅ Arena correctie voltooid")
+            st.success("✅ Arena correction complete")
     else:
-        st.info("Geen spelers gevonden in de database.")
+        st.info("No players found in the database.")
 
-# ── Tab 3: Landen controleren ────────────────────────────────────────────────
+# ── Tab 3: Country check ─────────────────────────────────────────────────────
 
 with tab_countries:
-    st.subheader("Landen controleren")
-    st.caption("Haalt het land op van BGA voor spelers zonder land (country IS NULL). Niet gevonden → UNKNOWN.")
+    st.subheader("Check countries")
+    st.caption("Fetches the country from BGA for players without one (country IS NULL). Not found → UNKNOWN.")
 
     try:
         conn_co = duckdb.connect(DB_FILE, read_only=True)
         df_countries = conn_co.execute(
-            "SELECT name AS Naam, bga_player_id AS \"BGA ID\", country AS Land FROM players WHERE bga_player_id IS NOT NULL ORDER BY name"
+            "SELECT name AS Name, bga_player_id AS \"BGA ID\", country AS Country FROM players WHERE bga_player_id IS NOT NULL ORDER BY name"
         ).df()
         null_count = int(conn_co.execute(
             "SELECT COUNT(*) FROM players WHERE bga_player_id IS NOT NULL AND country IS NULL"
@@ -503,14 +503,14 @@ with tab_countries:
         conn_co.close()
         if not df_countries.empty:
             st.dataframe(df_countries, hide_index=True, use_container_width=True)
-        st.caption(f"{null_count} speler(s) zonder land")
+        st.caption(f"{null_count} player(s) without country")
     except Exception:
         null_count = 0
 
     if not cstate["running"]:
-        if st.button("🔍 Landen ophalen & corrigeren", disabled=imp["running"] or arena["running"] or null_count == 0):
+        if st.button("🔍 Fetch & fix countries", disabled=imp["running"] or arena["running"] or null_count == 0):
             if not email or not password:
-                st.error("Vul eerst email en wachtwoord in (bovenaan).")
+                st.error("Fill in email and password first (top of page).")
             else:
                 st.session_state["bga_email"] = email
                 st.session_state["bga_password"] = password
@@ -525,11 +525,11 @@ with tab_countries:
                 ).start()
                 st.rerun()
     else:
-        st.info("⏳ Landencontrole bezig ...")
-        st.button("↻ Ververs", key="refresh_countries", on_click=lambda: None)
+        st.info("⏳ Country check running ...")
+        st.button("↻ Refresh", key="refresh_countries", on_click=lambda: None)
 
     if cstate["log"]:
         st.code("\n".join(cstate["log"][-60:]), language=None)
 
     if cstate["done"] and not cstate["running"]:
-        st.success(f"✅ Landencontrole voltooid — {cstate['updated']} landen bijgewerkt")
+        st.success(f"✅ Country check complete — {cstate['updated']} countries updated")

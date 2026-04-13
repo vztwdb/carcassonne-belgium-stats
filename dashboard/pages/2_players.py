@@ -17,10 +17,10 @@ ELO_BASE = 1300
 with open(SEASONS_PATH) as f:
     ARENA_SEASONS = json.load(f)["seasons"]
 
-st.title("👤 Spelers")
+st.title("👤 Players")
 
 if not DB_PATH.exists():
-    st.warning("Geen database gevonden. Importeer eerst data via de Import pagina.")
+    st.warning("No database found. Import data first via the Import page.")
     st.stop()
 
 conn = duckdb.connect(str(DB_PATH), read_only=True)
@@ -29,13 +29,13 @@ _last_import = conn.execute(
     "SELECT MAX(imported_at) FROM import_tracking"
 ).fetchone()[0]
 if _last_import:
-    st.caption(f"Laatst geïmporteerd: {_last_import:%d/%m/%Y %H:%M}")
+    st.caption(f"Last imported: {_last_import:%d/%m/%Y %H:%M}")
 
 # ── Filters ───────────────────────────────────────────────────────────────────
 
 boardgames = conn.execute("SELECT id, name FROM boardgames ORDER BY name").fetchall()
 if not boardgames:
-    st.info("Nog geen bordspellen in de database.")
+    st.info("No boardgames in the database yet.")
     conn.close()
     st.stop()
 
@@ -43,7 +43,7 @@ col_a, col_b, col_c, col_d, col_e = st.columns([2, 2, 2, 2, 2])
 
 with col_a:
     bg_options = {name: bg_id for bg_id, name in boardgames}
-    selected_bg_name = st.selectbox("Bordspel", list(bg_options.keys()))
+    selected_bg_name = st.selectbox("Boardgame", list(bg_options.keys()))
     selected_bg_id = bg_options[selected_bg_name]
 
 with col_b:
@@ -54,18 +54,18 @@ with col_b:
           AND COALESCE(ended_at, played_at) IS NOT NULL
         ORDER BY yr DESC
     """, [selected_bg_id]).fetchall()
-    year_options = ["Alle jaren"] + [str(r[0]) for r in available_years]
-    selected_year = st.selectbox("Jaar", year_options)
+    year_options = ["All years"] + [str(r[0]) for r in available_years]
+    selected_year = st.selectbox("Year", year_options)
 
 with col_c:
     season_options = {
-        "Alle seizoenen": None,
+        "All seasons": None,
         **{
             f"S{s['season']}" + (f" – {s['label']}" if "label" in s else ""):
             s for s in reversed(ARENA_SEASONS)
         },
     }
-    selected_season_name = st.selectbox("Arena seizoen", list(season_options.keys()))
+    selected_season_name = st.selectbox("Arena season", list(season_options.keys()))
     selected_season = season_options[selected_season_name]
 
 with col_d:
@@ -78,14 +78,14 @@ with col_d:
           AND p.country IS NOT NULL
         ORDER BY p.country
     """, [selected_bg_id]).fetchall()
-    country_options = ["Alle landen"] + [r[0] for r in available_countries]
-    selected_country = st.selectbox("Land", country_options)
+    country_options = ["All countries"] + [r[0] for r in available_countries]
+    selected_country = st.selectbox("Country", country_options)
 
 with col_e:
-    search = st.text_input("Zoek speler", placeholder="Naam...")
+    search = st.text_input("Search player", placeholder="Name...")
 
-only_elo = st.checkbox("Spelers met ELO", value=True, key="only_elo")
-only_nt = st.checkbox("Nationale ploeg", value=False, key="only_nt")
+only_elo = st.checkbox("Players with ELO", value=True, key="only_elo")
+only_nt = st.checkbox("National team", value=False, key="only_nt")
 
 # ── Statistieken per speler ───────────────────────────────────────────────────
 
@@ -178,8 +178,8 @@ df = conn.execute("""
     ORDER BY spellen DESC NULLS LAST
 
 """, [selected_bg_id,
-      0 if selected_year == "Alle jaren" else int(selected_year),
-      0 if selected_year == "Alle jaren" else int(selected_year),
+      0 if selected_year == "All years" else int(selected_year),
+      0 if selected_year == "All years" else int(selected_year),
       season_start, season_start,
       season_end, season_end,
       only_elo, selected_bg_id,
@@ -196,17 +196,17 @@ for col in ("max_elo", "last_elo"):
 if selected_season:
     df = df[df["last_arena"].notna() & (df["max_arena"] != 1500)]
 
-if selected_country != "Alle landen":
+if selected_country != "All countries":
     df = df[df["country"] == selected_country]
 
 if search:
     df = df[df["name"].str.contains(search, case=False, na=False)]
 
 if df.empty:
-    st.info(f"Geen spelers gevonden voor {selected_bg_name}.")
+    st.info(f"No players found for {selected_bg_name}.")
     st.stop()
 
-st.caption(f"{len(df)} speler(s)")
+st.caption(f"{len(df)} player(s)")
 
 # ── Navigate on selection from previous rerun ────────────────────────────────
 
@@ -224,17 +224,17 @@ df["BGA"] = df["bga_player_id"].apply(
 display_df = df[["name", "BGA", "country", "spellen", "win_pct",
                   "max_elo", "last_elo", "max_arena", "last_arena",
                   "pct_2p", "pct_rt", "pct_basis"]].rename(columns={
-    "name":       "Naam",
-    "country":    "Land",
-    "spellen":    "Spellen",
+    "name":       "Name",
+    "country":    "Country",
+    "spellen":    "Games",
     "win_pct":    "Win%",
     "max_elo":    "Max ELO",
-    "last_elo":   "Laatste ELO",
+    "last_elo":   "Last ELO",
     "max_arena":  "Max Arena",
-    "last_arena": "Laatste Arena",
+    "last_arena": "Last Arena",
     "pct_2p":     "% 2P",
     "pct_rt":     "% Realtime",
-    "pct_basis":  "% Basis",
+    "pct_basis":  "% Base",
 })
 
 event = st.dataframe(
