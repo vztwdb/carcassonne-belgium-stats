@@ -2,11 +2,20 @@
 
 Only games where BOTH participants are Belgian (country = 'BE') count.
 
+Scope:
+  - 2-player games only.
+  - Carcassonne base game only: Framework (boardgame_id = 2) is excluded, and
+    games where any player scored > 160 are assumed to use an expansion and
+    skipped.
+  - BGA games that are part of a BCOC match (linked via
+    tournament_matches.game_id_*) are excluded here — the BCOC match-level
+    event captures them once at K_BCOC.
+
 Sources processed chronologically:
   - BGA 1v1 games         (source='bga', 2 players)       K = 8
   - BCLC Swiss-round games (source='swiss', BCLC)         K = 24
   - BCLC playoff games     (source='manual', BCLC)        K = 32
-  - BCOC tournament_matches (match-level, best-of-N)      K = 28
+  - BCOC tournament_matches (game-share, e.g. 2-1 -> 0.667) K = 28
 
 Idempotent: wipes player_head2head_elo + player_head2head_events and rewrites.
 """
@@ -44,13 +53,26 @@ def collect_events(c: duckdb.DuckDBPyConnection, be_ids: set[int]) -> list[tuple
     events: list[tuple] = []
     placeholders = ",".join(str(pid) for pid in be_ids) if be_ids else "-1"
 
+    # Games that are already part of a BCOC match — they are counted
+    # once at the match level below, never as standalone BGA events.
+    bcoc_game_ids: set[int] = {
+        row[0] for row in c.execute("""
+            SELECT unnest([game_id_1, game_id_2, game_id_3, game_id_4, game_id_5])
+            FROM tournament_matches tm
+            JOIN tournaments t ON t.id = tm.tournament_id
+            WHERE t.type = 'BCOC'
+        """).fetchall()
+        if row[0] is not None
+    }
+
     # ── BGA + BCLC games (via games/game_players) ────────────────────────────
+    # Exclude Framework (boardgame_id = 2) and expansion games (max score > 160).
     rows = c.execute(f"""
         WITH two_be AS (
             SELECT gp.game_id,
                    MIN(CASE WHEN gp.rank = 1 THEN gp.player_id END) AS winner_id,
                    MIN(CASE WHEN gp.rank = 2 THEN gp.player_id END) AS loser_id,
-                   BOOL_OR(gp.rank IS NULL) AS has_null_rank
+                   MAX(gp.score) AS max_score
             FROM game_players gp
             WHERE gp.player_id IN ({placeholders})
             GROUP BY gp.game_id
@@ -71,10 +93,14 @@ def collect_events(c: duckdb.DuckDBPyConnection, be_ids: set[int]) -> list[tuple
         LEFT JOIN tournaments t ON t.id = g.tournament_id
         WHERE g.source IN ('bga', 'swiss', 'manual')
           AND (g.unranked IS NULL OR g.unranked = FALSE)
+          AND (g.boardgame_id IS NULL OR g.boardgame_id = 1)
+          AND (tb.max_score IS NULL OR tb.max_score <= 160)
     """).fetchall()
 
     for gid, source, tid, ts, t_date_start, t_type, winner_id, loser_id in rows:
         if winner_id is None or loser_id is None:
+            continue
+        if gid in bcoc_game_ids:
             continue
         if source == "bga":
             k = K_BGA
@@ -90,7 +116,7 @@ def collect_events(c: duckdb.DuckDBPyConnection, be_ids: set[int]) -> list[tuple
         ev_date = (ts.date() if hasattr(ts, "date") else ts) or t_date_start
         sort_key = (ev_date or t_date_start, gid)
         # One event = one rating update. winner = A with result 1.
-        events.append((sort_key, ev_date, src_label, tid, winner_id, loser_id, 1.0, k))
+        events.append((sort_key, ev_date, src_label, tid, gid, winner_id, loser_id, 1.0, k))
 
     # ── BCOC matches (via tournament_matches) ────────────────────────────────
     rows = c.execute(f"""
@@ -112,10 +138,10 @@ def collect_events(c: duckdb.DuckDBPyConnection, be_ids: set[int]) -> list[tuple
     for mid, tid, d, p1, p2, s1, s2, res in rows:
         if p1 is None or p2 is None:
             continue
-        # Determine result_a where A = p1
+        # Match result weighted by game share: 2-0 -> 1.0, 2-1 -> 0.667,
+        # 1-1 -> 0.5, etc. Counts as a single ELO event at K_BCOC.
         if s1 is not None and s2 is not None and (s1 + s2) > 0:
-            total = s1 + s2
-            result_a = s1 / total
+            result_a = s1 / (s1 + s2)
         elif res == "1":
             result_a = 1.0
         elif res == "2":
@@ -125,7 +151,7 @@ def collect_events(c: duckdb.DuckDBPyConnection, be_ids: set[int]) -> list[tuple
         else:
             continue
         sort_key = (d, 10_000_000 + mid)  # BCOC after any same-date game records
-        events.append((sort_key, d, "bcoc", tid, p1, p2, result_a, K_BCOC))
+        events.append((sort_key, d, "bcoc", tid, None, p1, p2, result_a, K_BCOC))
 
     from datetime import date as _date
     MIN_DATE = _date(1900, 1, 1)
@@ -149,7 +175,7 @@ def main() -> None:
     def r(pid: int) -> float:
         return ratings.get(pid, START_RATING)
 
-    for _sk, d, src, tid, a, b, result_a, k in events:
+    for _sk, d, src, tid, gid, a, b, result_a, k in events:
         ra, rb = r(a), r(b)
         ea = expected(ra, rb)
         delta = k * (result_a - ea)
@@ -179,8 +205,8 @@ def main() -> None:
             stats[a]["dr"] += 1
             stats[b]["dr"] += 1
 
-        history_rows.append((a, d, src, tid, b, result_a, k, ra, ra_new))
-        history_rows.append((b, d, src, tid, a, 1.0 - result_a, k, rb, rb_new))
+        history_rows.append((a, d, src, tid, gid, b, result_a, k, ra, ra_new))
+        history_rows.append((b, d, src, tid, gid, a, 1.0 - result_a, k, rb, rb_new))
 
     # Build final rows
     rows_out = []
@@ -217,9 +243,9 @@ def main() -> None:
     c.executemany(
         """
         INSERT INTO player_head2head_events
-            (player_id, event_date, source, tournament_id, opponent_id,
+            (player_id, event_date, source, tournament_id, game_id, opponent_id,
              result, k_factor, rating_before, rating_after)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         history_rows,
     )

@@ -192,9 +192,13 @@ with tab_h2h:
                        he.k_factor,
                        ROUND(he.rating_before, 0) AS before,
                        ROUND(he.rating_after, 0)  AS after,
-                       ROUND(he.rating_after - he.rating_before, 1) AS delta
+                       ROUND(he.rating_after - he.rating_before, 1) AS delta,
+                       CASE WHEN g.bga_table_id IS NOT NULL
+                            THEN 'https://boardgamearena.com/table?table=' || g.bga_table_id
+                            ELSE NULL END AS bga_link
                 FROM player_head2head_events he
                 JOIN players p ON p.id = he.opponent_id
+                LEFT JOIN games g ON g.id = he.game_id
                 WHERE he.player_id = ?
                 ORDER BY he.event_date DESC, he.id DESC
                 LIMIT 500
@@ -216,7 +220,16 @@ with tab_h2h:
                 st.line_chart(chart_df, x="event_date", y="rating", height=220)
 
             if len(history) > 0:
-                st.dataframe(history, hide_index=True, use_container_width=True)
+                st.dataframe(
+                    history,
+                    hide_index=True,
+                    use_container_width=True,
+                    column_config={
+                        "bga_link": st.column_config.LinkColumn(
+                            "BGA", display_text="open"
+                        ),
+                    },
+                )
             else:
                 st.info("No head-to-head events for this player.")
 
