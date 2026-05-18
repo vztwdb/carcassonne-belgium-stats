@@ -11,6 +11,27 @@ DB_PATH = DATA_DIR / "carcassonne.duckdb"
 BGA_PLAYER_URL = "https://boardgamearena.com/player?id="
 BGA_TABLE_URL = "https://boardgamearena.com/table?table="
 
+
+def games_won_lost(row, max_games: int = 5) -> str | None:
+    """Count per-game W/L from score_be_i / score_opp_i columns.
+
+    Tied games (same score) count as a loss for Belgium ('lost draw' tiebreak),
+    matching how `result` is recorded for nations_matches.
+    """
+    won = lost = 0
+    for i in range(1, max_games + 1):
+        be = row.get(f"score_be_{i}")
+        opp = row.get(f"score_opp_{i}")
+        if pd.isna(be) or pd.isna(opp):
+            continue
+        if be > opp:
+            won += 1
+        else:
+            lost += 1
+    if won == 0 and lost == 0:
+        return None
+    return f"{won}-{lost}"
+
 st.title("National Team Belgium")
 
 if not DB_PATH.exists():
@@ -226,8 +247,10 @@ if detail_player_id:
                 ), axis=1
             )
 
+        df_player_games["Games"] = df_player_games.apply(games_won_lost, axis=1)
+
         display_cols = ["Date", "Tournament", "Stage", "vs Country", "Opponent",
-                        "Result", "Score BE", "Score Opp",
+                        "Result", "Games", "Score BE", "Score Opp",
                         "Score 1", "Game 1", "Score 2", "Game 2", "Score 3", "Game 3"]
         for i in range(4, 6):
             if df_player_games[f"Game {i}"].notna().any() or df_player_games[f"Score {i}"].notna().any():
@@ -395,8 +418,10 @@ if not df_duels.empty:
                 ), axis=1
             )
 
+        df_detail["Games"] = df_detail.apply(games_won_lost, axis=1)
+
         display_cols = ["Player BE", "Player BE BGA", "Opponent", "Opponent BGA",
-                        "Result", "Score BE", "Score Opp",
+                        "Result", "Games", "Score BE", "Score Opp",
                         "Score 1", "Game 1", "Score 2", "Game 2", "Score 3", "Game 3"]
         for i in range(4, 6):
             if df_detail[f"Game {i}"].notna().any() or df_detail[f"Score {i}"].notna().any():
@@ -575,8 +600,10 @@ if not df_countries.empty:
                     ), axis=1
                 )
 
+            df_country_games["Games"] = df_country_games.apply(games_won_lost, axis=1)
+
             display_cols_c = ["Date", "Tournament", "Stage", "Player BE", "Opponent",
-                              "Result", "Score BE", "Score Opp",
+                              "Result", "Games", "Score BE", "Score Opp",
                               "Score 1", "Game 1", "Score 2", "Game 2", "Score 3", "Game 3"]
             for i in range(4, 6):
                 if df_country_games[f"Game {i}"].notna().any() or df_country_games[f"Score {i}"].notna().any():
