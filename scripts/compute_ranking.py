@@ -42,9 +42,9 @@ BCL_WEIGHT = 0.5
 BCL_TIER_FACTOR = {"ML": 1.00, "GL": 0.60, "SL": 0.35, "BL": 0.20}
 
 NATIONS_OFFICIAL_WIN = 4.0
-NATIONS_OFFICIAL_LOSS = 1.0
+NATIONS_OFFICIAL_LOSS = 0.0
 NATIONS_FRIENDLY_WIN = 2.0
-NATIONS_FRIENDLY_LOSS = 0.5
+NATIONS_FRIENDLY_LOSS = 0.0
 
 # Chess-style display scaling: elo = ELO_FLOOR + total_score * ELO_SCALE
 ELO_FLOOR = 1500
@@ -283,8 +283,6 @@ def compute_nations_bonus(c: duckdb.DuckDBPyConnection, be_ids: set[int]) -> lis
             raw = win_pts
         elif result == "L":
             raw = loss_pts
-        elif result == "D":
-            raw = (win_pts + loss_pts) / 2
         else:
             continue
 
