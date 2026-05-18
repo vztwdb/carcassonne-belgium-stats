@@ -149,12 +149,54 @@ def compute_bga_base(c: duckdb.DuckDBPyConnection, be_ids: set[int]) -> dict[int
     return stats
 
 
+def last_game_date_per_player(
+    c: duckdb.DuckDBPyConnection, tournament_type: str
+) -> dict[tuple[int, int], date]:
+    """{(tournament_id, player_id): date of last game played in that tournament}.
+
+    Walks `tournament_matches.game_id_1..5` for tournaments of the given type
+    and takes MAX(games.ended_at) per (tournament, player). Used to anchor
+    ranking-event dates to a player's actual activity instead of the tournament
+    start.
+    """
+    rows = c.execute(
+        """
+        WITH match_games AS (
+            SELECT tm.tournament_id, tm.player_1_id AS pid, g.ended_at
+            FROM tournament_matches tm
+            JOIN tournaments t ON t.id = tm.tournament_id
+            JOIN games g ON g.id IN
+                (tm.game_id_1, tm.game_id_2, tm.game_id_3, tm.game_id_4, tm.game_id_5)
+            WHERE t.type = ?
+            UNION ALL
+            SELECT tm.tournament_id, tm.player_2_id AS pid, g.ended_at
+            FROM tournament_matches tm
+            JOIN tournaments t ON t.id = tm.tournament_id
+            JOIN games g ON g.id IN
+                (tm.game_id_1, tm.game_id_2, tm.game_id_3, tm.game_id_4, tm.game_id_5)
+            WHERE t.type = ?
+        )
+        SELECT tournament_id, pid, MAX(ended_at)
+        FROM match_games
+        GROUP BY tournament_id, pid
+        """,
+        [tournament_type, tournament_type],
+    ).fetchall()
+    out: dict[tuple[int, int], date] = {}
+    for tid, pid, ended_at in rows:
+        if ended_at is None:
+            continue
+        out[(tid, pid)] = ended_at.date() if hasattr(ended_at, "date") else ended_at
+    return out
+
+
 def compute_tournament_bonus(
     c: duckdb.DuckDBPyConnection,
     be_ids: set[int],
     tournament_type: str,
     source_label: str,
     weight: float,
+    last_played: dict[tuple[int, int], date] | None = None,
 ) -> list[tuple]:
     """Placement-based bonus using the fixed placement_points table."""
     rows = c.execute(
@@ -178,11 +220,16 @@ def compute_tournament_bonus(
         d = decay(year)
         pts = raw * d * weight
         desc = f"{name} — rank {rank}"
-        events.append((pid, source_label, date_start, year, tid, desc, raw, d, pts))
+        event_date = (last_played or {}).get((tid, pid), date_start)
+        events.append((pid, source_label, event_date, year, tid, desc, raw, d, pts))
     return events
 
 
-def compute_bcl_bonus(c: duckdb.DuckDBPyConnection, be_ids: set[int]) -> list[tuple]:
+def compute_bcl_bonus(
+    c: duckdb.DuckDBPyConnection,
+    be_ids: set[int],
+    last_played: dict[tuple[int, int], date] | None = None,
+) -> list[tuple]:
     """BCL placement bonus, tier-scaled at 0.5 per season."""
     rows = c.execute(
         """
@@ -206,7 +253,8 @@ def compute_bcl_bonus(c: duckdb.DuckDBPyConnection, be_ids: set[int]) -> list[tu
         if raw == 0:
             continue
         d = decay(year)
-        events.append((pid, "bcl", date_start, year, tid,
+        event_date = (last_played or {}).get((tid, pid), date_start)
+        events.append((pid, "bcl", event_date, year, tid,
                        f"{name} — rank {rank} ({tier})",
                        raw, d, raw * d * BCL_WEIGHT))
     return events
@@ -303,10 +351,17 @@ def main() -> None:
     print(f"BGA stats for {len(bga)} players "
           f"({sum(1 for s in bga.values() if s['games'] >= MIN_BGA_GAMES)} above threshold)")
 
+    # Per-player last-game dates (Bo3 / online series — one duel per day, but
+    # the season spans weeks, so use the actual played date instead of the
+    # tournament start). BCLC is a single-day live event and stays on date_start.
+    bcoc_last = last_game_date_per_player(c, "BCOC")
+    bcl_last = last_game_date_per_player(c, "BCL")
+
     events: list[tuple] = []
     events += compute_tournament_bonus(c, be_ids, "BCLC", "bk_live", BK_LIVE_WEIGHT)
-    events += compute_tournament_bonus(c, be_ids, "BCOC", "bk_online", BK_ONLINE_WEIGHT)
-    events += compute_bcl_bonus(c, be_ids)
+    events += compute_tournament_bonus(c, be_ids, "BCOC", "bk_online", BK_ONLINE_WEIGHT,
+                                       last_played=bcoc_last)
+    events += compute_bcl_bonus(c, be_ids, last_played=bcl_last)
     events += compute_wcc_bonus(c, be_ids)
     events += compute_nations_bonus(c, be_ids)
     print(f"Generated {len(events)} ranking events")
