@@ -45,10 +45,11 @@ conn = duckdb.connect(str(DB_PATH), read_only=True)
 col_a, col_b = st.columns([2, 2])
 
 with col_a:
+    # Tournaments first (most recent year first), friendlies last.
     tournaments = conn.execute("""
         SELECT id, name, type, year FROM tournaments
         WHERE national_team_competition = TRUE
-        ORDER BY type, year
+        ORDER BY (type = 'FRIENDLIES'), year DESC, type
     """).fetchall()
     tourn_options = {"All tournaments": None}
     for tid, name, ttype, year in tournaments:
