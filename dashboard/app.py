@@ -10,6 +10,7 @@ public_pages = [
     st.Page("pages/4_head_to_head.py", title="Head to Head", icon="⚔️"),
     st.Page("pages/5_national_team.py", title="National Team", icon="🇧🇪"),
     st.Page("pages/6_bcoc.py", title="BCOC", icon="🏆"),
+    st.Page("pages/13_bcl.py", title="BCL", icon="🏟️"),
     st.Page("pages/8_bclc.py", title="BCLC", icon="🎯"),
     st.Page("pages/10_wcc.py", title="WCC", icon="🌍"),
     st.Page("pages/7_country_duel.py", title="Country Duel", icon="🆚"),

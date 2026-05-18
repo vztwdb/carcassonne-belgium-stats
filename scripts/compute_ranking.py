@@ -4,6 +4,7 @@ Strategy:
   Final score = BGA base (0-100, normalized all-time peak Elo)
               + BK live bonus       (BCLC placement points, recency-decayed)
               + BK online bonus     (BCOC placement points, recency-decayed)
+              + BCL bonus           (tier-scaled BCL placement, 0.5 per season)
               + WCC bonus           (participation + top-4 finish, recency-decayed)
               + Nations bonus       (per-match points, recency-decayed)
 
@@ -34,6 +35,11 @@ BK_LIVE_WEIGHT = 1.0
 BK_ONLINE_WEIGHT = 0.75  # slightly lower than live due to smaller player pool
 
 WCC_PLACEMENT_WEIGHT = 0.7
+
+# Belgian Carcassonne League: 0.5 per season (2 seasons/year → 1.0 yearly weight).
+BCL_WEIGHT = 0.5
+# Tier multipliers — a Bronze League champion ≠ Master League champion.
+BCL_TIER_FACTOR = {"ML": 1.00, "GL": 0.60, "SL": 0.35, "BL": 0.20}
 
 NATIONS_OFFICIAL_WIN = 4.0
 NATIONS_OFFICIAL_LOSS = 1.0
@@ -176,6 +182,36 @@ def compute_tournament_bonus(
     return events
 
 
+def compute_bcl_bonus(c: duckdb.DuckDBPyConnection, be_ids: set[int]) -> list[tuple]:
+    """BCL placement bonus, tier-scaled at 0.5 per season."""
+    rows = c.execute(
+        """
+        SELECT tp.player_id, t.id, t.year, t.date_start, t.name, t.edition, tp.final_rank
+        FROM tournament_participants tp
+        JOIN tournaments t ON t.id = tp.tournament_id
+        WHERE t.type = 'BCL' AND tp.final_rank IS NOT NULL
+        """
+    ).fetchall()
+
+    events: list[tuple] = []
+    for pid, tid, year, date_start, name, edition, rank in rows:
+        if pid not in be_ids:
+            continue
+        # Edition is like "2026 Spring ML"; tier is the trailing token.
+        tier = (edition or "").split()[-1] if edition else "ML"
+        tier_factor = BCL_TIER_FACTOR.get(tier, 0.0)
+        if tier_factor == 0.0:
+            continue
+        raw = placement_points(rank) * tier_factor
+        if raw == 0:
+            continue
+        d = decay(year)
+        events.append((pid, "bcl", date_start, year, tid,
+                       f"{name} — rank {rank} ({tier})",
+                       raw, d, raw * d * BCL_WEIGHT))
+    return events
+
+
 def compute_wcc_bonus(c: duckdb.DuckDBPyConnection, be_ids: set[int]) -> list[tuple]:
     # Field size per WCC tournament (from participants_count, fallback to tournament_participants).
     field_sizes = dict(c.execute(
@@ -272,6 +308,7 @@ def main() -> None:
     events: list[tuple] = []
     events += compute_tournament_bonus(c, be_ids, "BCLC", "bk_live", BK_LIVE_WEIGHT)
     events += compute_tournament_bonus(c, be_ids, "BCOC", "bk_online", BK_ONLINE_WEIGHT)
+    events += compute_bcl_bonus(c, be_ids)
     events += compute_wcc_bonus(c, be_ids)
     events += compute_nations_bonus(c, be_ids)
     print(f"Generated {len(events)} ranking events")
@@ -279,6 +316,7 @@ def main() -> None:
     sums: dict[int, dict[str, float]] = {}
     for pid, source, *_rest, _raw, _d, points in events:
         bucket = sums.setdefault(pid, {"bk_live": 0.0, "bk_online": 0.0,
+                                        "bcl": 0.0,
                                         "wcc": 0.0, "nations_official": 0.0,
                                         "nations_friendly": 0.0})
         bucket[source] += points
@@ -291,9 +329,10 @@ def main() -> None:
         bga_base = b.get("base", 0.0)
         bk_live = s.get("bk_live", 0.0)
         bk_online = s.get("bk_online", 0.0)
+        bcl = s.get("bcl", 0.0)
         wcc = s.get("wcc", 0.0)
         nations = s.get("nations_official", 0.0) + s.get("nations_friendly", 0.0)
-        total = bga_base + bk_live + bk_online + wcc + nations
+        total = bga_base + bk_live + bk_online + bcl + wcc + nations
         elo = int(round(ELO_FLOOR + total * ELO_SCALE))
         rows_out.append((
             pid,
@@ -303,6 +342,7 @@ def main() -> None:
             b.get("games", 0),
             bk_live,
             bk_online,
+            bcl,
             wcc,
             nations,
             total,
@@ -319,9 +359,9 @@ def main() -> None:
         """
         INSERT INTO player_ranking
             (player_id, bga_base, bga_peak_elo, bga_current_elo, bga_games,
-             bk_live_bonus, bk_online_bonus, wcc_bonus, nations_bonus, total_score,
-             ranking_elo, rank)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             bk_live_bonus, bk_online_bonus, bcl_bonus, wcc_bonus, nations_bonus,
+             total_score, ranking_elo, rank)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         ranked,
     )

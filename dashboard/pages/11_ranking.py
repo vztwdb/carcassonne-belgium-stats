@@ -33,7 +33,8 @@ tab_composite, tab_h2h = st.tabs(["Composite score", "Head-to-head Elo"])
 with tab_composite:
     st.caption(
         "Elo = 1500 + BGA base (peak 0-60 + current 0-60, current halves per year of inactivity) "
-        "+ recency-decayed bonuses (0.85^years) for BK live, BK online, WCC and national-team matches. "
+        "+ recency-decayed bonuses (0.85^years) for BK live, BK online, BCL (0.5 per season, "
+        "ML/GL/SL/BL tier-scaled), WCC and national-team matches. "
         "Only Belgian players (country = BE)."
     )
 
@@ -56,6 +57,7 @@ with tab_composite:
                    ROUND(pr.bga_base, 1)        AS bga_base,
                    ROUND(pr.bk_live_bonus, 1)   AS bk_live,
                    ROUND(pr.bk_online_bonus, 1) AS bk_online,
+                   ROUND(pr.bcl_bonus, 1)       AS bcl,
                    ROUND(pr.wcc_bonus, 1)       AS wcc,
                    ROUND(pr.nations_bonus, 1)   AS nations,
                    pr.bga_games                 AS bga_games,
@@ -87,7 +89,8 @@ with tab_composite:
             summary = conn.execute(
                 """
                 SELECT pr.ranking_elo, pr.rank, pr.total_score, pr.bga_base, pr.bga_peak_elo,
-                       pr.bk_live_bonus, pr.bk_online_bonus, pr.wcc_bonus, pr.nations_bonus
+                       pr.bk_live_bonus, pr.bk_online_bonus, pr.bcl_bonus,
+                       pr.wcc_bonus, pr.nations_bonus
                 FROM player_ranking pr
                 WHERE pr.player_id = ?
                 """,
@@ -95,16 +98,18 @@ with tab_composite:
             ).fetchone()
 
             if summary:
-                elo, rank, total, bga_base, bga_peak, bk_live, bk_online, wcc, nations = summary
-                cols = st.columns(7)
+                (elo, rank, total, bga_base, bga_peak,
+                 bk_live, bk_online, bcl, wcc, nations) = summary
+                cols = st.columns(8)
                 cols[0].metric("Elo", elo, f"rank {rank}")
                 cols[1].metric("Total score", f"{total:.1f}")
                 cols[2].metric("BGA base", f"{bga_base:.1f}",
                                f"peak {int(bga_peak) if bga_peak else '—'}")
                 cols[3].metric("BK live", f"{bk_live:.1f}")
                 cols[4].metric("BK online", f"{bk_online:.1f}")
-                cols[5].metric("WCC", f"{wcc:.1f}")
-                cols[6].metric("Nations", f"{nations:.1f}")
+                cols[5].metric("BCL", f"{bcl:.1f}")
+                cols[6].metric("WCC", f"{wcc:.1f}")
+                cols[7].metric("Nations", f"{nations:.1f}")
 
             events = conn.execute(
                 """
@@ -131,7 +136,7 @@ with tab_composite:
 with tab_h2h:
     st.caption(
         "Classical Elo (start 1500) updated game-by-game, only when BOTH players are Belgian. "
-        "K-factors: BGA 8 · BCLC Swiss 24 · BCLC playoff 32 · BCOC 28."
+        "K-factors: BGA 8 · BCLC Swiss 24 · BCLC playoff 32 · BCOC 28 · BCL 28."
     )
 
     if not has_h2h:
